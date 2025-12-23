@@ -32,7 +32,7 @@ void setup() {
     Serial.println("FOC Motor Test Initialized.");
 
     // Set initial target position
-    motor.setTorque(0.5f);
+    motor.setTorque(2.f);
 }
 
 void loop() {

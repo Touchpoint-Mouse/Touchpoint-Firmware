@@ -40,7 +40,7 @@ void HydraFOCMotor::begin() {
 
     // velocity PI controller parameters
     motor.PID_velocity.P = 0.2f;
-    motor.PID_velocity.I = 20;
+    motor.PID_velocity.I = 16.f;
     motor.PID_velocity.D = 0;
     // maximal voltage to be set to the motor
     motor.voltage_limit = 5.6f;
@@ -51,8 +51,8 @@ void HydraFOCMotor::begin() {
 
     // angle P controller
     motor.P_angle.P = 20;
-    // maximal velocity of the position control
-    motor.velocity_limit = 20;
+    // maximal velocity of the controller
+    motor.velocity_limit = 150;
     
     // comment out if not needed
     motor.useMonitoring(Serial);
@@ -67,8 +67,10 @@ void HydraFOCMotor::begin() {
     currentSense.init();
     motor.linkCurrentSense(&currentSense);
     
-    // skip alignment with phases
-    currentSense.skip_align = true;
+    //Calibration parameters
+    motor.zero_electric_angle = 4.69;
+    motor.sensor_direction = Direction::CW;
+    currentSense.skip_align = true; // skip current sense alignment
 
     // align sensor and start FOC
     motor.initFOC();
