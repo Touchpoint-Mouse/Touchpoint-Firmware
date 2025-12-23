@@ -25,8 +25,9 @@ void HydraFOCMotor::begin() {
     motor.init();
     //motor.initFOC();
 
-    // Initialize encoder
+    // Initialize encoder - read initial position first, then reset to zero
     encoder.begin();
+    encoder.reset();   // Now set relative position to zero
 }
 
 void HydraFOCMotor::setVelocity(float velocity) {
@@ -63,7 +64,7 @@ void HydraFOCMotor::update() {
 }
 
 float HydraFOCMotor::getPosition() const {
-    return encoder.getAngleRadians();
+    return encoder.getRelAngle();
 }
 
 float HydraFOCMotor::getVelocity() const {
