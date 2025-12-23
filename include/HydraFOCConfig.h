@@ -22,19 +22,8 @@ uint8_t CORE_1 = 1;
 #define I2C1_SDA 39
 #define I2C1_SCL 40
 
-// I2C parameters
-#define I2C_BAUD_RATE 1000000
-#define I2C_TIMEOUT 1000 // in milliseconds
-
 //Serial parameters
 #define SERIAL_BAUD_RATE 115200//460800
-
-////////////////////////////////////////////////////////////////////
-// Servo configuration
-//////////////////////////////////////////////////////////////////
-
-// Servo signal multiplier for deserialization
-const float servoSignalDeserialize = 1./32767.;
 
 ////////////////////////////////////////////////////////////////////
 // HydraFOC motor configuration

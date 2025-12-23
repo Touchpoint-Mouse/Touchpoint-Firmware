@@ -10,7 +10,7 @@ constexpr float MOTOR_POLE_PAIRS = 7;
 constexpr float MOTOR_KV = 100.0f;
 
 // HydraFOC motor object
-HydraFOCMotor motor(focMotorPins[0][0], focMotorPins[0][1], focMotorPins[0][2], focMotorPins[0][3], focMotorPins[0][4], focMotorPins[0][5], I2C1_SDA);
+HydraFOCMotor motor(focMotorPins[0][0], focMotorPins[0][1], focMotorPins[0][2], focMotorPins[0][3], focMotorPins[0][4], focMotorPins[0][5], I2C1_SDA, focCurrentPins[0][0], focCurrentPins[0][1]);
 
 void setup() {
     Serial.begin(SERIAL_BAUD_RATE);
@@ -32,7 +32,7 @@ void setup() {
     Serial.println("FOC Motor Test Initialized.");
 
     // Set initial target position
-    motor.setPosition(0.0f);
+    motor.setTorque(0.5f);
 }
 
 void loop() {

@@ -1,10 +1,11 @@
 #include "HydraFOCMotor.h"
 
-HydraFOCMotor::HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t enA, uint8_t enB, uint8_t enC, uint8_t dirPin)
+HydraFOCMotor::HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t enA, uint8_t enB, uint8_t enC, uint8_t dirPin, uint8_t current0, uint8_t current1)
     : motor(11), // 7 pole pairs as example, adjust as needed
       driver(pwmA, pwmB, pwmC, enA, enB, enC),
       encoder(AS5600_I2C),
       encoderDirPin(dirPin),
+      currentSense(0.025f, 100.f, current0, current1),
       targetVelocity(0),
       targetPosition(0),
       targetTorque(0),
@@ -35,7 +36,6 @@ void HydraFOCMotor::begin() {
     // choose FOC modulation (optional)
     motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
 
-    // contoller configuration
     // default parameters in defaults.h
 
     // velocity PI controller parameters
@@ -57,8 +57,19 @@ void HydraFOCMotor::begin() {
     // comment out if not needed
     motor.useMonitoring(Serial);
 
+    // link current sense to driver and motor BEFORE motor.init()
+    currentSense.linkDriver(&driver);
+
     // initialize motor
     motor.init();
+    
+    // initialize current sense AFTER motor.init()
+    currentSense.init();
+    motor.linkCurrentSense(&currentSense);
+    
+    // skip alignment with phases
+    currentSense.skip_align = true;
+
     // align sensor and start FOC
     motor.initFOC();
 }
