@@ -1,12 +1,14 @@
-#ifndef FOC_MOTOR_TEST_HPP
-#define FOC_MOTOR_TEST_HPP
+#ifndef BUTTON_TEST_HPP
+#define BUTTON_TEST_HPP
 
 #include <Arduino.h>
 #include "HydraFOCMotor.h"
 #include "HydraFOCConfig.h"
 
-// Loop counter
-unsigned long loopCounter = 0;
+// Critical points for force vs displacement curve
+const float criticalPoints[3] = {2, 1.8, 1.5}; // in radians
+// Steepness for linear parts of force displacement curve
+const float steepness[3] = {20, 10, 20}; // Nm/rad
 
 // HydraFOC motor object
 HydraFOCMotor motor(focMotorPins[0][0], focMotorPins[0][1], focMotorPins[0][2], focMotorPins[0][3], focMotorPins[0][4], focMotorPins[0][5], I2C1_SDA, focCurrentPins[0][0], focCurrentPins[0][1]);
@@ -32,28 +34,16 @@ void setup() {
     Serial.println("FOC Motor Test Initialized.");
 
     // Set initial target position
-    motor.setPosition(0.f);
+    motor.setTorque(2.f);
 }
 
 void loop() {
     // Run FOC control loop
     motor.update();
 
-    // Motor variable monitoring
-    //motor.monitor();
-
-    // Prints current sensing readings
-    /*Serial.print("Current A: ");
-    Serial.print(analogRead(focCurrentPins[0][0]));
-    Serial.print(" | Current B: ");
-    Serial.println(analogRead(focCurrentPins[0][1]));*/
-
-    // Prints encoder angle with full precision (every 100 loop counts)
-    if (loopCounter % 100 == 0) {
-        Serial.println(motor.getPosition(), 6);  // 6 decimal places
-    }
-
-    loopCounter++;
+    // Prints encoder angle
+    Serial.print("Encoder Angle (rad): ");
+    Serial.println(motor.getPosition());
 }
 
-#endif // FOC_MOTOR_TEST_HPP
+#endif // BUTTON_TEST_HPP

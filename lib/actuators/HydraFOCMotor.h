@@ -11,7 +11,10 @@ public:
     HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t enA, uint8_t enB, uint8_t enC, uint8_t dirPin, uint8_t current0, uint8_t current1);
 
     // Initialize the motor and driver
-    void begin();
+    void begin(Direction encDir, float encOffset, bool skipAlign);
+
+    // Resets the encoder
+    void resetEncoder();
 
     // Set target velocity (rad/s)
     void setVelocity(float velocity);
@@ -25,11 +28,14 @@ public:
     // Update FOC loop (call in loop)
     void update();
 
+    // Motor monitoring
+    void monitor();
+
     // Get current position (rad)
-    float getPosition() const;
+    float getPosition();
 
     // Get current velocity (rad/s)
-    float getVelocity() const;
+    float getVelocity();
 
 private:
     BLDCMotor motor;

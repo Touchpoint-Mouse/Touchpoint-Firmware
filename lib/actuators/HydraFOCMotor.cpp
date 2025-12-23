@@ -1,7 +1,7 @@
 #include "HydraFOCMotor.h"
 
 HydraFOCMotor::HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t enA, uint8_t enB, uint8_t enC, uint8_t dirPin, uint8_t current0, uint8_t current1)
-    : motor(11), // 7 pole pairs as example, adjust as needed
+    : motor(11),
       driver(pwmA, pwmB, pwmC, enA, enB, enC),
       encoder(AS5600_I2C),
       encoderDirPin(dirPin),
@@ -13,8 +13,8 @@ HydraFOCMotor::HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t e
 {
 }
 
-void HydraFOCMotor::begin() {
-    SimpleFOCDebug::enable(&Serial);
+void HydraFOCMotor::begin(Direction encDir, float encOffset, bool skipAlign) {
+    //SimpleFOCDebug::enable(&Serial);
 
     digitalWrite(encoderDirPin, HIGH); // Set direction pin high (adjust as needed)
 
@@ -55,7 +55,10 @@ void HydraFOCMotor::begin() {
     motor.velocity_limit = 150;
     
     // comment out if not needed
-    motor.useMonitoring(Serial);
+    //motor.useMonitoring(Serial);
+    // Set monitoring variables to include q and d currents, along with velocity and angle
+    //motor.monitor_variables = _MON_CURR_Q;
+    //motor.monitor_downsample = 100; // default 10
 
     // link current sense to driver and motor BEFORE motor.init()
     currentSense.linkDriver(&driver);
@@ -68,12 +71,16 @@ void HydraFOCMotor::begin() {
     motor.linkCurrentSense(&currentSense);
     
     //Calibration parameters
-    motor.zero_electric_angle = 4.69;
-    motor.sensor_direction = Direction::CW;
-    currentSense.skip_align = true; // skip current sense alignment
+    motor.zero_electric_angle = encOffset;
+    motor.sensor_direction = encDir;
+    currentSense.skip_align = skipAlign; // skip current sense alignment
 
     // align sensor and start FOC
     motor.initFOC();
+}
+
+void HydraFOCMotor::resetEncoder() {
+    motor.sensor_offset = encoder.getAngle();
 }
 
 void HydraFOCMotor::setVelocity(float velocity) {
@@ -109,10 +116,14 @@ void HydraFOCMotor::update() {
     }
 }
 
-float HydraFOCMotor::getPosition() const {
-    return motor.shaft_angle;
+void HydraFOCMotor::monitor() {
+    motor.monitor();
 }
 
-float HydraFOCMotor::getVelocity() const {
-    return motor.shaft_velocity;
+float HydraFOCMotor::getPosition() {
+    return encoder.getAngle() - motor.sensor_offset;  // Get position directly from encoder
+}
+
+float HydraFOCMotor::getVelocity() {
+    return encoder.getVelocity();  // Get velocity directly from encoder
 }
