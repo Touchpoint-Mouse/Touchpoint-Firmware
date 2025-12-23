@@ -27,12 +27,15 @@ void setup() {
 
     // Initialize HydraFOC motor
     motor.begin();
+
+    delay(1000); // Wait for motor to stabilize
+    Serial.println("FOC Motor Test Initialized.");
+
+    // Set initial target position
+    motor.setPosition(0.0f);
 }
 
 void loop() {
-    // Example: Set target velocity
-    motor.setVelocity(1.0f); // 10 rad/s
-
     // Run FOC control loop
     motor.update();
 
@@ -43,8 +46,8 @@ void loop() {
     Serial.println(analogRead(focCurrentPins[0][1]));*/
 
     // Prints encoder angle
-    Serial.print("Encoder Angle (rad): ");
-    Serial.println(motor.getPosition());
+    //Serial.print("Encoder Angle (rad): ");
+    //Serial.println(motor.getPosition());
 }
 
 #endif // FOC_MOTOR_TEST_HPP

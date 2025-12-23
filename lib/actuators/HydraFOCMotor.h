@@ -3,13 +3,12 @@
 
 #include <Arduino.h>
 #include <SimpleFOC.h>
-#include "MagEncoder.h"
 
 // HydraFOCMotor: Wrapper for SimpleFOC motor and driver
 class HydraFOCMotor {
 public:
     // Construct with motor driver pins and encoder i2c port
-    HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t enA, uint8_t enB, uint8_t enC, uint8_t dirPin, TwoWire* i2cPort = &Wire);
+    HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t enA, uint8_t enB, uint8_t enC, uint8_t dirPin);
 
     // Initialize the motor and driver
     void begin();
@@ -35,7 +34,8 @@ public:
 private:
     BLDCMotor motor;
     BLDCDriver3PWM driver;
-    MagEncoder encoder;
+    MagneticSensorI2C encoder;
+    uint8_t encoderDirPin;
     float targetVelocity;
     float targetPosition;
     float targetTorque;
