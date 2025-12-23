@@ -25,6 +25,15 @@ public:
     // Sets target torque (Nm)
     void setTorque(float torque);
 
+    // Get target velocity (rad/s)
+    float getTargetVelocity();
+    
+    // Get target position (rad)
+    float getTargetPosition();
+
+    // Get target torque (Nm)
+    float getTargetTorque();
+    
     // Update FOC loop (call in loop)
     void update();
 

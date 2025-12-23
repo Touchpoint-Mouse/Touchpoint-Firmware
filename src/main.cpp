@@ -7,7 +7,7 @@
 
 #ifdef INTEGRATION_TESTING
 #include <HydraFOCMotor.h>  // Force LDF to find the library
-#include "../integration/foc_motor_test.hpp" // Testing file to run
+#include "../integration/button_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 

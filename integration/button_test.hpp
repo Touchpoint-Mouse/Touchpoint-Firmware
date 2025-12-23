@@ -5,10 +5,15 @@
 #include "HydraFOCMotor.h"
 #include "HydraFOCConfig.h"
 
+// Loop counter
+unsigned long loopCounter = 0;
+
 // Critical points for force vs displacement curve
-const float criticalPoints[3] = {2, 1.8, 1.5}; // in radians
+const float criticalPoints[3] = {2, 1.5, 1}; // in radians
 // Steepness for linear parts of force displacement curve
-const float steepness[3] = {20, 10, 20}; // Nm/rad
+const float steepness = 50; // Volts/rad
+// Constant force
+const float constantForce = 1.f; // Volts
 
 // HydraFOC motor object
 HydraFOCMotor motor(focMotorPins[0][0], focMotorPins[0][1], focMotorPins[0][2], focMotorPins[0][3], focMotorPins[0][4], focMotorPins[0][5], I2C1_SDA, focCurrentPins[0][0], focCurrentPins[0][1]);
@@ -29,21 +34,35 @@ void setup() {
     // Initialize HydraFOC motor
     motor.begin(Direction::CW, 4.69f, true);
     motor.resetEncoder();
+}
 
-    delay(1000); // Wait for motor to stabilize
-    Serial.println("FOC Motor Test Initialized.");
+void updateSim() {
+    // Get current position
+    float position = motor.getPosition();
 
-    // Set initial target position
-    motor.setTorque(2.f);
+    // Determine motor control method
+    if (position > criticalPoints[1]) {
+        motor.setPosition(criticalPoints[0]);
+    } else if (position > criticalPoints[2]) {
+        motor.setTorque(constantForce);
+    } else {
+        motor.setTorque(steepness * (criticalPoints[2] - position) + constantForce);
+    }
 }
 
 void loop() {
+    // Run button simulation
+    updateSim();
+
     // Run FOC control loop
     motor.update();
 
-    // Prints encoder angle
-    Serial.print("Encoder Angle (rad): ");
-    Serial.println(motor.getPosition());
+    // Prints position
+    if (loopCounter % 100 == 0) {
+        Serial.println(motor.getPosition(), 6);
+    }
+
+    loopCounter++;
 }
 
 #endif // BUTTON_TEST_HPP

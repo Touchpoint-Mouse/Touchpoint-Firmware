@@ -89,16 +89,28 @@ void HydraFOCMotor::setVelocity(float velocity) {
     motor.controller = MotionControlType::velocity;
 }
 
+float HydraFOCMotor::getTargetVelocity() {
+    return targetVelocity;
+}
+
 void HydraFOCMotor::setPosition(float position) {
     targetPosition = position;
     mode = POSITION;
     motor.controller = MotionControlType::angle;
 }
 
+float HydraFOCMotor::getTargetPosition() {
+    return targetPosition;
+}
+
 void HydraFOCMotor::setTorque(float torque) {
     targetTorque = torque;
     mode = TORQUE;
     motor.controller = MotionControlType::torque;
+}
+
+float HydraFOCMotor::getTargetTorque() {
+    return targetTorque;
 }
 
 void HydraFOCMotor::update() {
