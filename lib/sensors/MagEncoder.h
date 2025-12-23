@@ -9,26 +9,20 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <AS5600.h>
-#include "BusChain.h"
-#include "I2CDevice.h"
 
-class MagEncoder : public I2CDevice {
+class MagEncoder {
 public:
-    MagEncoder();
-    bool begin(TwoWire* wire) override;
-    bool begin(uint8_t sensorPort, BusChain* busChain) override;
+    MagEncoder(uint8_t dirPin, TwoWire* wire = &Wire);
+    bool begin();
     void update();
-    uint16_t getRawAngle();
-    float getAngleDegrees();
-    float getAngleRadians();
+    uint16_t getRawAngle() const;
+    float getAngleDegrees() const;
+    float getAngleRadians() const;
 
 private:
     AS5600 as5600;
-    TwoWire* i2cPort;
-    uint8_t sensorChannel = 0;
-    BusChain* busChain;
-    bool busChainEnable = false;
     uint16_t lastRawAngle;
+    uint8_t dirPin;
 };
 
 #endif // MAGENCODER_H

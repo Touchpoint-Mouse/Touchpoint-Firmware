@@ -10,10 +10,13 @@ constexpr float MOTOR_POLE_PAIRS = 7;
 constexpr float MOTOR_KV = 100.0f;
 
 // HydraFOC motor object
-HydraFOCMotor motor(focMotorPins[0][0], focMotorPins[0][1], focMotorPins[0][2], focMotorPins[0][3], focMotorPins[0][4], focMotorPins[0][5]);
+HydraFOCMotor motor(focMotorPins[0][0], focMotorPins[0][1], focMotorPins[0][2], focMotorPins[0][3], focMotorPins[0][4], focMotorPins[0][5], I2C1_SDA);
 
 void setup() {
     Serial.begin(SERIAL_BAUD_RATE);
+    // Configure I2C
+    Wire.begin(I2C0_SDA, I2C0_SCL);
+
     // Configure driver pins
     pinMode(focDriverSleepPin, OUTPUT);
     pinMode(focDriverResetPin, OUTPUT);
@@ -34,10 +37,14 @@ void loop() {
     motor.update();
 
     // Prints current sensing readings
-    Serial.print("Current A: ");
+    /*Serial.print("Current A: ");
     Serial.print(analogRead(focCurrentPins[0][0]));
     Serial.print(" | Current B: ");
-    Serial.println(analogRead(focCurrentPins[0][1]));
+    Serial.println(analogRead(focCurrentPins[0][1]));*/
+
+    // Prints encoder angle
+    Serial.print("Encoder Angle (rad): ");
+    Serial.println(motor.getPosition());
 }
 
 #endif // FOC_MOTOR_TEST_HPP

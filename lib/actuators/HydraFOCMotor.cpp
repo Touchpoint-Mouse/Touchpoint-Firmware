@@ -1,8 +1,9 @@
 #include "HydraFOCMotor.h"
 
-HydraFOCMotor::HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t enA, uint8_t enB, uint8_t enC)
+HydraFOCMotor::HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t enA, uint8_t enB, uint8_t enC, uint8_t dirPin, TwoWire* i2cPort)
     : motor(11), // 7 pole pairs as example, adjust as needed
       driver(pwmA, pwmB, pwmC, enA, enB, enC),
+      encoder(dirPin, i2cPort),
       targetVelocity(0),
       targetPosition(0),
       targetTorque(0),
@@ -23,6 +24,9 @@ void HydraFOCMotor::begin() {
     motor.controller = MotionControlType::velocity_openloop;
     motor.init();
     //motor.initFOC();
+
+    // Initialize encoder
+    encoder.begin();
 }
 
 void HydraFOCMotor::setVelocity(float velocity) {
@@ -44,6 +48,7 @@ void HydraFOCMotor::setTorque(float torque) {
 }
 
 void HydraFOCMotor::update() {
+    encoder.update();
     switch (mode) {
         case VELOCITY:
             motor.move(targetVelocity);
@@ -58,7 +63,7 @@ void HydraFOCMotor::update() {
 }
 
 float HydraFOCMotor::getPosition() const {
-    return motor.shaft_angle;
+    return encoder.getAngleRadians();
 }
 
 float HydraFOCMotor::getVelocity() const {
