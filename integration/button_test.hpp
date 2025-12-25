@@ -29,12 +29,13 @@ unsigned long lastClickEnd = 0;
 // Button height
 const float buttonHeight = 2; // in radians
 
-// Click threshold
-const float clickThreshold = 0.007f; // in radians
+// Press threshold (must press this deep to trigger press event)
+const float pressThreshold = 0.007f; // in radians
+
+// Release threshold (must return this far to trigger release event - hysteresis)
+const float releaseThreshold = 0.0001f; // in radians
 
 const float intermediateThreshold = 0.002f; // in radians
-
-const float releaseThreshold = 0.0001f;
 
 // Force during click
 const float clickForce = 0.f; // Volts
@@ -61,30 +62,41 @@ void setup() {
 
     // Initial position
     motor.setPosition(buttonHeight);
+    currState = BUTTON_RELEASED;
     delay(500); // Wait for motor to stabilize
 }
 
 void updateSim() {
-    // Get current position
+    // Get current position and velocity
     float position = motor.getPosition();
+    float velocity = motor.getVelocity();
 
-    // Determine new state based on position
-    ButtonState newState;
-    if (position > buttonHeight - clickThreshold) {
-        newState = BUTTON_RELEASED;
+    // Determine new state based on position with hysteresis
+    ButtonState newState = currState;  // Default to current state
+    
+    if (currState == BUTTON_RELEASED) {
+        // Must cross press threshold to register press
+        if (position <= buttonHeight - pressThreshold) {
+            newState = BUTTON_PRESSED;
+        }
     } else {
-        newState = BUTTON_PRESSED;
+        // Must cross release threshold to register release (hysteresis)
+        if (position >= buttonHeight - releaseThreshold) {
+            newState = BUTTON_RELEASED;
+        }
     }
 
     // Check if timer is active
     if (clickStart != 0) {
         // Timer is running - check if it expired
         if (millis() - clickStart >= clickTime) {
-            // Timer expired - always return to released position
+            // Timer expired - return to appropriate position based on current state
             clickStart = 0;
             lastClickEnd = millis();
-            if (newState == BUTTON_PRESSED) {
-                motor.setPosition(buttonHeight-intermediateThreshold); // Slightly below button height
+            
+            // If still pressed, use intermediate position to reduce motor fight
+            if (currState == BUTTON_PRESSED) {
+                motor.setPosition(buttonHeight - intermediateThreshold);
             } else {
                 motor.setPosition(buttonHeight);
             }
@@ -95,33 +107,18 @@ void updateSim() {
         if (newState != currState) {
             // Check if enough time has passed since last click
             if (millis() - lastClickEnd >= minTimeBetweenClicks) {
-                bool shouldTrigger = false;
-                
-                // Check if this is a valid transition
-                if (newState == BUTTON_PRESSED) {
-                    // Always give feedback on press
-                    shouldTrigger = true;
-                } else {
-                    // Only give feedback on release if near button height
-                    if (position > buttonHeight - releaseThreshold) {
-                        shouldTrigger = true;
-                    }
-                }
-                
-                if (shouldTrigger) {
-                    // State changed (threshold crossed) - start timer and apply zero torque
-                    clickStart = millis();
-                    motor.setTorque(clickForce);
+                // State changed (threshold crossed) - start timer and apply zero torque
+                clickStart = millis();
+                motor.setTorque(clickForce);
 
-                    // Updates current state
-                    currState = newState;
-                    
-                    // Log the transition
-                    if (newState == BUTTON_PRESSED) {
-                        Serial.println("Button Pressed - Zero Torque");
-                    } else {
-                        Serial.println("Button Released - Zero Torque");
-                    }
+                // Updates current state
+                currState = newState;
+                
+                // Log the transition
+                if (newState == BUTTON_PRESSED) {
+                    Serial.println("Button Pressed");
+                } else {
+                    Serial.println("Button Released");
                 }
             }
             // else: too soon after last click, ignore this crossing
@@ -137,9 +134,11 @@ void loop() {
     // Run FOC control loop
     motor.update();
 
-    // Prints position
+    // Prints position and target position every 100 loop counts
     if (loopCounter % 100 == 0) {
-        //Serial.println(motor.getPosition(), 6);
+        Serial.print(motor.getPosition(), 6);
+        Serial.print(" ");
+        Serial.println(motor.getTargetPosition(), 6);
     }
 
     loopCounter++;
