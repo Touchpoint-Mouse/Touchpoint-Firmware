@@ -8,7 +8,7 @@
 #include "SongbirdCore.h"
 #include "SongbirdUART.h"
 
-#define SERIAL_BAUD 115200
+#define SERIAL_BAUD 460800
 
 // Joystick x coordinate
 #define xPin SPI_MOSI
@@ -35,12 +35,11 @@ int yCenter = 2910;
 int deadzone = 20;  // Deadzone radius in ADC units
 
 // Mouse movement parameters
-float mouseSensitivity = 10.0f;  // Pixels per unit of joystick deflection
+float mouseSensitivity = 25.0f;  // Pixels per unit of joystick deflection
 int8_t maxMouseSpeed = 127;      // Max mouse speed (-127 to 127)
 
 // Mouse data streaming interval (ms)
-const uint32_t mouseUpdateInterval = 100;  // 100Hz update rate
-
+const uint32_t mouseUpdateInterval = 10;  // 100Hz update rate
 // Connection state
 volatile bool connectedToDesktop = false;
 
@@ -95,9 +94,6 @@ void mouseTask(void* pvParameters) {
   TickType_t lastWakeTime = xTaskGetTickCount();
   
   while (true) {
-    // Update button state
-    joystickButton.update();
-    
     // Read raw values
     int xRaw = analogRead(xPin);
     int yRaw = analogRead(yPin);
@@ -110,16 +106,15 @@ void mouseTask(void* pvParameters) {
     int8_t mouseX = constrain((int)(xProcessed * mouseSensitivity), -maxMouseSpeed, maxMouseSpeed);
     int8_t mouseY = constrain((int)(yProcessed * mouseSensitivity), -maxMouseSpeed, maxMouseSpeed);
     
-    // Get button state
-    bool buttonPressed = joystickButton.state();
-    
-    // Create and send mouse data packet (header 0x01 for mouse data)
-    // Payload: [mouseX (int8), mouseY (int8), button (uint8)]
-    auto pkt = core->createPacket(0x01);
-    pkt.writeByte((uint8_t)mouseX);
-    pkt.writeByte((uint8_t)mouseY);
-    pkt.writeByte(buttonPressed ? 0x01 : 0x00);
-    core->sendPacket(pkt);
+	// Send mouse data if there is movement
+	if (mouseX != 0 || mouseY != 0) {
+		// Create and send mouse data packet (header 0x01 for mouse data)
+		// Payload: [mouseX (int8), mouseY (int8)]
+		auto pkt = core->createPacket(0x01);
+		pkt.writeByte((uint8_t)mouseX);
+		pkt.writeByte((uint8_t)mouseY);
+		core->sendPacket(pkt);
+	}
     
 
     // Wait for next interval
@@ -131,6 +126,16 @@ void mouseTask(void* pvParameters) {
 void updateTask(void* pvParameters) {
   while (true) {
     uart.updateData();
+	joystickButton.update();
+
+	// Sends button packet if button event
+	if (joystickButton.change()) {
+		// Create and send button data packet (header 0x02 for button data)
+		auto pkt = core->createPacket(0x02);
+		pkt.writeByte(joystickButton.state() ? 1 : 0);
+		core->sendPacket(pkt);
+	}
+
     vTaskDelay(1); // Yield to other tasks
   }
 }
