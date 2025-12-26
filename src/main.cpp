@@ -10,7 +10,7 @@
 #include <Button.h>
 #include <SongbirdCore.h>
 #include <SongbirdUART.h>
-#include "../integration/uart_command_test.hpp" // Testing file to run
+#include "../integration/elevation_feedback_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 

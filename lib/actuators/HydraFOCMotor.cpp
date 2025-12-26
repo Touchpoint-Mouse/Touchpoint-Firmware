@@ -15,7 +15,6 @@ HydraFOCMotor::HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t e
 
 void HydraFOCMotor::begin(Direction encDir, float encOffset, bool skipAlign) {
     //SimpleFOCDebug::enable(&Serial);
-
     digitalWrite(encoderDirPin, HIGH); // Set direction pin high (adjust as needed)
 
     // initialise magnetic sensor hardware
@@ -61,19 +60,21 @@ void HydraFOCMotor::begin(Direction encDir, float encOffset, bool skipAlign) {
     //motor.monitor_downsample = 100; // default 10
 
     // link current sense to driver and motor BEFORE motor.init()
-    currentSense.linkDriver(&driver);
+    // DISABLED: Current sensing interferes with external ADC usage
+    //currentSense.linkDriver(&driver);
 
     // initialize motor
     motor.init();
     
     // initialize current sense AFTER motor.init()
-    currentSense.init();
-    motor.linkCurrentSense(&currentSense);
+    // DISABLED: Current sensing interferes with external ADC usage
+    //currentSense.init();
+    //motor.linkCurrentSense(&currentSense);
     
     //Calibration parameters
     motor.zero_electric_angle = encOffset;
     motor.sensor_direction = encDir;
-    currentSense.skip_align = skipAlign; // skip current sense alignment
+    //currentSense.skip_align = skipAlign; // skip current sense alignment
 
     // align sensor and start FOC
     motor.initFOC();

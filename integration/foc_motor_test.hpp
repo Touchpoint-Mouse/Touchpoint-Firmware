@@ -21,8 +21,6 @@ void setup() {
     pinMode(focDriverResetPin, OUTPUT);
     digitalWrite(focDriverSleepPin, HIGH); // Wake up driver
     digitalWrite(focDriverResetPin, HIGH); // Release reset
-    pinMode(focCurrentPins[0][0], INPUT);
-    pinMode(focCurrentPins[0][1], INPUT);
 
     // Initialize HydraFOC motor
     motor.begin(Direction::CW, 1.04f, true);

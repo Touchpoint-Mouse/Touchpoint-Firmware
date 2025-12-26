@@ -111,8 +111,8 @@ void mouseTask(void* pvParameters) {
 		// Create and send mouse data packet (header 0x01 for mouse data)
 		// Payload: [mouseX (int8), mouseY (int8)]
 		auto pkt = core->createPacket(0x01);
-		pkt.writeByte((uint8_t)mouseX);
-		pkt.writeByte((uint8_t)mouseY);
+		pkt.writeByte(mouseX);
+		pkt.writeByte(mouseY);
 		core->sendPacket(pkt);
 	}
     
