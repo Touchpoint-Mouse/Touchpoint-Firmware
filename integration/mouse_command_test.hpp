@@ -136,7 +136,7 @@ void updateTask(void* pvParameters) {
 		core->sendPacket(pkt);
 	}
 
-    vTaskDelay(1); // Yield to other tasks
+    taskYIELD(); // Yield to other tasks
   }
 }
 

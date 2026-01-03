@@ -11,12 +11,6 @@
 
 #define SERIAL_BAUD 460800
 
-// Joystick x coordinate
-#define xPin SPI_MOSI
-
-// Joystick y coordinate
-#define yPin SPI_SCK
-
 // HydraFOC motor object - using pointer to control initialization timing
 HydraFOCMotor* motor = nullptr;
 
@@ -34,45 +28,13 @@ SongbirdUART uart("Mouse UART");
 // Serial protocol object
 std::shared_ptr<SongbirdCore> core;
 
-// Joystick button
-Button joystickButton(SPI_CS, true);
-
-// Joystick calibration
-int xCenter = 2910;  // ADC center value (12-bit ADC: 0-4095)
-int yCenter = 2910;
-int deadzone = 20;  // Deadzone radius in ADC units
-
-// Mouse movement parameters
-float mouseSensitivity = 25.0f;  // Pixels per unit of joystick deflection
-int8_t maxMouseSpeed = 127;      // Max mouse speed (-127 to 127)
-
-// Mouse data streaming interval (ms)
-const uint32_t mouseUpdateInterval = 10;  // 100Hz update rate
 // Connection state
 volatile bool connectedToDesktop = false;
 
 // RTOS task function prototypes
 void pingTask(void* pvParameters);
-void mouseTask(void* pvParameters);
 void updateTask(void* pvParameters);
 void focTask(void* pvParameters);
-
-// Joystick processing function
-float processAxis(int rawValue, int center, int deadzone) {
-    // Calculate offset from center
-    int offset = rawValue - center;
-    
-    // Apply deadzone
-    if (abs(offset) < deadzone) {
-        return 0.0f;
-    }
-    
-    // Map to -1.0 to 1.0 range outside deadzone
-    float maxRange = max(center - deadzone, 4095 - center - deadzone);
-    float adjustedOffset = (offset > 0) ? (offset - deadzone) : (offset + deadzone);
-    
-    return constrain(adjustedOffset / maxRange, -1.0f, 1.0f);
-}
 
 // Elevation feedback handler
 void elevationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
@@ -105,41 +67,6 @@ void pingTask(void* pvParameters) {
   vTaskSuspend(NULL);
 }
 
-// Mouse task - streams mouse data at regular intervals
-void mouseTask(void* pvParameters) {
-  // Wait for connection to desktop
-  while (!connectedToDesktop) {
-    vTaskDelay(pdMS_TO_TICKS(100));
-  }
-  
-  TickType_t lastWakeTime = xTaskGetTickCount();
-  
-  while (true) {
-    // Read raw values
-    int xRaw = analogRead(xPin);
-    int yRaw = analogRead(yPin);
-    
-    // Process with center and deadzone
-    float xProcessed = processAxis(xRaw, xCenter, deadzone);
-    float yProcessed = processAxis(yRaw, yCenter, deadzone);
-    
-    // Convert to mouse movement (scale and constrain)
-    int8_t mouseX = constrain((int)(xProcessed * mouseSensitivity), -maxMouseSpeed, maxMouseSpeed);
-    int8_t mouseY = constrain((int)(yProcessed * mouseSensitivity), -maxMouseSpeed, maxMouseSpeed);
-    
-    // Send mouse data if there's movement
-    if (mouseX != 0 || mouseY != 0) {
-      auto pkt = core->createPacket(0x01);
-      pkt.writeByte(mouseX);
-      pkt.writeByte(mouseY);
-      core->sendPacket(pkt);
-    }
-
-    // Wait for next interval
-    vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(mouseUpdateInterval));
-  }
-}
-
 // FOC task - runs motor control loop at high frequency
 void focTask(void* pvParameters) {
   while (true) {
@@ -154,15 +81,6 @@ void focTask(void* pvParameters) {
 void updateTask(void* pvParameters) {
   while (true) {
     uart.updateData();
-	joystickButton.update();
-
-	// Sends button packet if button event
-	if (joystickButton.change()) {
-		// Create and send button data packet (header 0x02 for button data)
-		auto pkt = core->createPacket(0x02);
-		pkt.writeByte(joystickButton.state() ? 1 : 0);
-		core->sendPacket(pkt);
-	}
 
     vTaskDelay(1); // Yield to other tasks
   }
@@ -179,22 +97,13 @@ void setup() {
     digitalWrite(focDriverSleepPin, HIGH); // Wake up driver
     digitalWrite(focDriverResetPin, HIGH); // Release reset
 
-	// Configure joystick pins
-  	pinMode(xPin, INPUT);
-  	pinMode(yPin, INPUT);
-
-	// Calibrate joystick center
-  	delay(500);
-  	xCenter = analogRead(xPin);
-  	yCenter = analogRead(yPin);
-
 	// Create motor object AFTER GPIO configuration AND joystick calibration
 	motor = new HydraFOCMotor(focMotorPins[0][0], focMotorPins[0][1], focMotorPins[0][2], 
 	                          focMotorPins[0][3], focMotorPins[0][4], focMotorPins[0][5], 
 	                          I2C1_SDA, focCurrentPins[0][0], focCurrentPins[0][1]);
 
 	// Initialize motor AFTER joystick calibration
-    motor->begin(Direction::CW, 1.04f, true);
+    motor->begin(Direction::CCW, 3.92f, true);
     motor->resetEncoder();
 	motor->setPosition(0.f);
   
@@ -213,16 +122,6 @@ void setup() {
     	NULL,               // Parameters
     	3,                  // Priority (highest - needs to connect first)
     	&pingTaskHandle,    // Task handle
-    	0                   // Core 0
-  	);
-  
-  	xTaskCreatePinnedToCore(
-    	mouseTask,          // Task function
-    	"Mouse_Task",       // Task name
-    	4096,               // Stack size
-    	NULL,               // Parameters
-    	2,                  // Priority (medium)
-    	&mouseTaskHandle,   // Task handle
     	0                   // Core 0
   	);
   

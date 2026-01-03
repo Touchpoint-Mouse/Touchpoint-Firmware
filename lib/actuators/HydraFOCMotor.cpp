@@ -81,7 +81,7 @@ void HydraFOCMotor::begin(Direction encDir, float encOffset, bool skipAlign) {
 }
 
 void HydraFOCMotor::resetEncoder() {
-    motor.sensor_offset = encoder.getAngle();
+    motor.sensor_offset = motor.shaft_angle;
 }
 
 void HydraFOCMotor::setVelocity(float velocity) {
@@ -134,9 +134,9 @@ void HydraFOCMotor::monitor() {
 }
 
 float HydraFOCMotor::getPosition() {
-    return encoder.getAngle() - motor.sensor_offset;  // Get position directly from encoder
+    return motor.shaft_angle;  // Get position directly from encoder
 }
 
 float HydraFOCMotor::getVelocity() {
-    return encoder.getVelocity();  // Get velocity directly from encoder
+    return -encoder.getVelocity();  // Get velocity directly from encoder
 }

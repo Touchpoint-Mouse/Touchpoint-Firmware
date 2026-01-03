@@ -23,7 +23,7 @@ void setup() {
     digitalWrite(focDriverResetPin, HIGH); // Release reset
 
     // Initialize HydraFOC motor
-    motor.begin(Direction::CW, 1.04f, true);
+    motor.begin(Direction::CW, 2.31f, true);
     motor.resetEncoder();
 
     delay(1000); // Wait for motor to stabilize
@@ -48,7 +48,7 @@ void loop() {
 
     // Prints encoder angle with full precision (every 100 loop counts)
     if (loopCounter % 100 == 0) {
-        //Serial.println(motor.getPosition(), 6);  // 6 decimal places
+        Serial.println(motor.getPosition(), 6);  // 6 decimal places
     }
 
     loopCounter++;
