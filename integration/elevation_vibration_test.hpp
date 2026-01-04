@@ -1,5 +1,5 @@
-#ifndef ELEVATION_FEEDBACK_TEST
-#define ELEVATION_FEEDBACK_TEST
+#ifndef ELEVATION_VIBRATION_TEST
+#define ELEVATION_VIBRATION_TEST
 
 #include <Arduino.h>
 #include <Button.h>
@@ -17,6 +17,9 @@ HydraFOCMotor* motor = nullptr;
 // Maximum motor elevation
 const float maxElevation = 3.75f; // in radians
 
+// Last elevation value
+float lastElevation = 0.f;
+
 // RTOS Task Handles
 TaskHandle_t pingTaskHandle = NULL;
 TaskHandle_t mouseTaskHandle = NULL;
@@ -27,6 +30,19 @@ TaskHandle_t focTaskHandle = NULL;
 SongbirdUART uart("UART");
 // Serial protocol object
 std::shared_ptr<SongbirdCore> core;
+
+// Header enum
+enum ElevationVibrationHeaders {
+	PING = 0xFF,
+	ELEVATION = 0x10,
+	VIBRATION = 0x20
+};
+
+// Vibration parameters
+float amplitude = 0.f;
+float frequency = 0.f;
+uint64_t startTime = 0;
+uint64_t duration = 0;
 
 // Connection state
 volatile bool connectedToDesktop = false;
@@ -42,10 +58,26 @@ void elevationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	float elevation = pkt->readFloat();
 	// Constrain elevation between 0 and 1
 	elevation = constrain(elevation, 0.f, 1.f);
+	lastElevation = elevation;
 	// Set motor target position based on elevation
-	if (motor) {
-		motor->setPosition(elevation * maxElevation);
+	motor->setPosition(elevation * maxElevation);
+}
+
+// Vibration feedback handler
+void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
+	// Read amplitude from packet (unit is mm displacement)
+	amplitude = pkt->readFloat();
+	// Read frequency from packet (unit is Hz)
+	frequency = pkt->readFloat();
+	// Read duration from packet (unit is num cycles)
+	if (frequency <= 0.f) {
+		duration = 0; // infinite duration
+	} else {
+		uint16_t numCycles = pkt->readInt16();
+		duration = (uint64_t) (numCycles / frequency * 1000000); // convert to microseconds
 	}
+	// Sets start time
+	startTime = micros();
 }
 
 // Ping task - sends ping to desktop and waits for response
@@ -53,11 +85,11 @@ void pingTask(void* pvParameters) {
   std::shared_ptr<SongbirdCore::Packet> response = nullptr;
   while (!response) {
     // Send ping
-    auto pkt = core->createPacket(0xFF);
+    auto pkt = core->createPacket(PING);
     core->sendPacket(pkt);
     
     // Wait for response
-    response = core->waitForHeader(0xFF, 1000);
+    response = core->waitForHeader(PING, 1000);
     core->flush();
   }
   
@@ -70,9 +102,24 @@ void pingTask(void* pvParameters) {
 // FOC task - runs motor control loop at high frequency
 void focTask(void* pvParameters) {
   while (true) {
-    if (motor) {
-      motor->update();  // Run FOC control loop
-    }
+	// Handle vibration effect
+	if (amplitude > 0.f && frequency > 0.f) {
+		uint64_t elapsed = micros() - startTime;
+		// Check if duration has not been exceeded (duration = 0 means infinite)
+		if (duration == 0 || elapsed < duration) {
+			// Calculate vibration offset
+			float vibOffset = amplitude * sinf(2.f * PI * frequency * (elapsed / 1000000.f));
+			// Update motor position with vibration
+			motor->setPosition((lastElevation + vibOffset) * maxElevation);
+		} else {
+			// Reset vibration parameters
+			amplitude = 0.f;
+			frequency = 0.f;
+			duration = 0.f;
+		}
+	}
+    
+    motor->update();  // Run FOC control loop
     taskYIELD();     // Allow other tasks to run (still very fast)
   }
 }
@@ -112,7 +159,10 @@ void setup() {
   	uart.begin(SERIAL_BAUD);
 
 	// Register elevation feedback handler
-	core->setHeaderHandler(0x10, elevationFeedbackHandler);
+	core->setHeaderHandler(ELEVATION, elevationFeedbackHandler);
+
+	// Register vibration feedback handler
+	core->setHeaderHandler(VIBRATION, vibrationFeedbackHandler);
   
   	// Create RTOS tasks
  	xTaskCreatePinnedToCore(
@@ -151,4 +201,4 @@ void loop() {
   	vTaskDelay(portMAX_DELAY);
 }
 
-#endif // ELEVATION_FEEDBACK_TEST
+#endif // ELEVATION_VIBRATION_TEST
