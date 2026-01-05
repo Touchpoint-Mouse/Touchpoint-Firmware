@@ -18,7 +18,7 @@ HydraFOCMotor* motor = nullptr;
 const float maxElevation = 3.75f; // in radians
 
 // Last elevation value
-float lastElevation = 0.f;
+float elevationTarget = 0.f;
 
 // RTOS Task Handles
 TaskHandle_t pingTaskHandle = NULL;
@@ -58,9 +58,7 @@ void elevationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	float elevation = pkt->readFloat();
 	// Constrain elevation between 0 and 1
 	elevation = constrain(elevation, 0.f, 1.f);
-	lastElevation = elevation;
-	// Set motor target position based on elevation
-	motor->setPosition(elevation * maxElevation);
+	elevationTarget = elevation;
 }
 
 // Vibration feedback handler
@@ -78,6 +76,26 @@ void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	}
 	// Sets start time
 	startTime = micros();
+}
+
+float getVibrationOffset() {
+	// Handle vibration effect
+	if (amplitude > 0.f && frequency > 0.f) {
+		return 0.f;
+	}
+	uint64_t elapsed = micros() - startTime;
+	// Check if duration has not been exceeded (duration = 0 means infinite)
+	if (duration == 0 || elapsed < duration) {
+		// Calculate vibration offset
+		return amplitude * sinf(2.f * PI * frequency * (elapsed / 1000000.f));
+	} else {
+		// Reset vibration parameters
+		amplitude = 0.f;
+		frequency = 0.f;
+		duration = 0.f;
+
+		return 0.f;
+	}
 }
 
 // Ping task - sends ping to desktop and waits for response
@@ -102,22 +120,8 @@ void pingTask(void* pvParameters) {
 // FOC task - runs motor control loop at high frequency
 void focTask(void* pvParameters) {
   while (true) {
-	// Handle vibration effect
-	if (amplitude > 0.f && frequency > 0.f) {
-		uint64_t elapsed = micros() - startTime;
-		// Check if duration has not been exceeded (duration = 0 means infinite)
-		if (duration == 0 || elapsed < duration) {
-			// Calculate vibration offset
-			float vibOffset = amplitude * sinf(2.f * PI * frequency * (elapsed / 1000000.f));
-			// Update motor position with vibration
-			motor->setPosition((lastElevation + vibOffset) * maxElevation);
-		} else {
-			// Reset vibration parameters
-			amplitude = 0.f;
-			frequency = 0.f;
-			duration = 0.f;
-		}
-	}
+	// Calculate target position with elevation and vibration
+	motor->setPosition((elevationTarget + getVibrationOffset()) * maxElevation);
     
     motor->update();  // Run FOC control loop
     taskYIELD();     // Allow other tasks to run (still very fast)
