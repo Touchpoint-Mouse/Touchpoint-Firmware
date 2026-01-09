@@ -69,7 +69,7 @@ void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	frequency = pkt->readFloat();
 	// Read duration from packet (unit is num cycles)
 	if (frequency <= 0.f) {
-		duration = 0; // infinite duration
+		duration = 0;
 	} else {
 		uint16_t numCycles = pkt->readInt16();
 		duration = (uint64_t) (numCycles / frequency * 1000000); // convert to microseconds
@@ -80,7 +80,7 @@ void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 
 float getVibrationOffset() {
 	// Handle vibration effect
-	if (amplitude > 0.f && frequency > 0.f) {
+	if (amplitude <= 0.f || frequency <= 0.f) {
 		return 0.f;
 	}
 	uint64_t elapsed = micros() - startTime;
