@@ -14,11 +14,13 @@
 // HydraFOC motor object - using pointer to control initialization timing
 HydraFOCMotor* motor = nullptr;
 
-// Maximum motor elevation
-const float maxElevation = 3.75f; // in radians
+// Elevation paramaters
 
-// Last elevation value
+const float maxElevation = 3.75f; // in radians
+float lastElevation = 0.f;
 float elevationTarget = 0.f;
+float maxElevationSpeed = 0.f; // units per second (0 = no smoothing)
+uint64_t lastElevationTime = 0;
 
 // RTOS Task Handles
 TaskHandle_t pingTaskHandle = NULL;
@@ -35,6 +37,7 @@ std::shared_ptr<SongbirdCore> core;
 enum ElevationVibrationHeaders {
 	PING = 0xFF,
 	ELEVATION = 0x10,
+	ELEVATION_SPEED = 0x11,
 	VIBRATION = 0x20
 };
 
@@ -59,6 +62,19 @@ void elevationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	// Constrain elevation between 0 and 1
 	elevation = constrain(elevation, 0.f, 1.f);
 	elevationTarget = elevation;
+	// Sets last elevation time
+	lastElevationTime = micros();
+}
+
+// Elevation smoothing handler
+void elevationSmoothingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
+	// Read max speed value from packet (float)
+	float speed = pkt->readFloat();
+	// Constrain speed to positive values
+	if (speed < 0.f) {
+		speed = 0.f;
+	}
+	maxElevationSpeed = speed;
 }
 
 // Vibration feedback handler
@@ -76,6 +92,28 @@ void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	}
 	// Sets start time
 	startTime = micros();
+}
+
+float getSmoothedElevation() {
+	// Handle elevation smoothing
+	uint64_t currentTime = micros();
+	uint64_t elapsed = currentTime - lastElevationTime;
+	float maxDelta = maxElevationSpeed * (elapsed / 1000000.f); // max change in elevation
+	if (elevationTarget > lastElevation) {
+		// Increase elevation towards target
+		lastElevation += maxDelta;
+		if (lastElevation > elevationTarget) {
+			lastElevation = elevationTarget;
+		}
+	} else if (elevationTarget < lastElevation) {
+		// Decrease elevation towards target
+		lastElevation -= maxDelta;
+		if (lastElevation < elevationTarget) {
+			lastElevation = elevationTarget;
+		}
+	}
+	lastElevationTime = currentTime;
+	return lastElevation;
 }
 
 float getVibrationOffset() {
@@ -121,7 +159,7 @@ void pingTask(void* pvParameters) {
 void focTask(void* pvParameters) {
   while (true) {
 	// Calculate target position with elevation and vibration
-	motor->setPosition((elevationTarget + getVibrationOffset()) * maxElevation);
+	motor->setPosition((getSmoothedElevation() + getVibrationOffset()) * maxElevation);
     
     motor->update();  // Run FOC control loop
     taskYIELD();     // Allow other tasks to run (still very fast)
@@ -167,6 +205,9 @@ void setup() {
 
 	// Register vibration feedback handler
 	core->setHeaderHandler(VIBRATION, vibrationFeedbackHandler);
+
+	// Register elevation smoothing handler
+	core->setHeaderHandler(ELEVATION_SPEED, elevationSmoothingHandler);
   
   	// Create RTOS tasks
  	xTaskCreatePinnedToCore(
