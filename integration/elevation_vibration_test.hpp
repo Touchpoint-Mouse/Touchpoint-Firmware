@@ -10,6 +10,7 @@
 #include "SongbirdUART.h"
 
 #define SERIAL_BAUD 460800
+#define MAX_VIBRATION_COMMANDS 4
 
 // HydraFOC motor object - using pointer to control initialization timing
 HydraFOCMotor* motor = nullptr;
@@ -42,13 +43,22 @@ enum ElevationVibrationHeaders {
 };
 
 // Vibration parameters
-float amplitude = 0.f;
-float frequency = 0.f;
+VibrationCommand currVib = {0.f, 0.f, 0};
+VibrationCommand nextVib = {0.f, 0.f, 0};
+bool hasNext = false;
 uint64_t startTime = 0;
-uint64_t duration = 0;
 
 // Connection state
 volatile bool connectedToDesktop = false;
+
+// RTOS queue for vibration commands
+typedef struct {
+	float amplitude;
+	float frequency;
+	uint64_t duration;
+} VibrationCommand;
+
+QueueHandle_t vibrationQueue;
 
 // RTOS task function prototypes
 void pingTask(void* pvParameters);
@@ -80,18 +90,20 @@ void elevationSmoothingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 // Vibration feedback handler
 void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	// Read amplitude from packet (unit is mm displacement)
-	amplitude = pkt->readFloat();
+	float amplitude = pkt->readFloat();
 	// Read frequency from packet (unit is Hz)
-	frequency = pkt->readFloat();
+	float frequency = pkt->readFloat();
 	// Read duration from packet (unit is num cycles)
+	uint64_t duration = 0;
 	if (frequency <= 0.f) {
 		duration = 0;
 	} else {
 		uint16_t numCycles = pkt->readInt16();
 		duration = (uint64_t) (numCycles / frequency * 1000000); // convert to microseconds
 	}
-	// Sets start time
-	startTime = micros();
+	// Adds vibration command to queue
+	VibrationCommand cmd = {amplitude, frequency, duration};
+	xQueueSend(vibrationQueue, &cmd, 0);
 }
 
 float getSmoothedElevation() {
@@ -116,21 +128,39 @@ float getSmoothedElevation() {
 	return lastElevation;
 }
 
+void goToNextVibration() {
+	// Move to next vibration command if available
+	if (hasNext) {
+		currVib = nextVib;
+		hasNext = false;
+		startTime = micros();
+	} else {
+		// No more commands, stop vibration
+		currVib.amplitude = 0.f;
+		currVib.frequency = 0.f;
+		currVib.duration = 0.f;
+	}
+}
+
 float getVibrationOffset() {
-	// Handle vibration effect
-	if (amplitude <= 0.f || frequency <= 0.f) {
+	// Check for new vibration commands
+	if (!hasNext && xQueueReceive(vibrationQueue, &nextVib, 0) == pdTRUE) {
+		hasNext = true;
+		// If current vibration is infinite duration, interrupt it
+		goToNextVibration();
+	}
+	// If amplitude or frequency is zero, no vibration
+	if (currVib.amplitude <= 0.f || currVib.frequency <= 0.f) {
 		return 0.f;
 	}
 	uint64_t elapsed = micros() - startTime;
 	// Check if duration has not been exceeded (duration = 0 means infinite)
-	if (duration == 0 || elapsed < duration) {
+	if (currVib.duration == 0 || elapsed < currVib.duration) {
 		// Calculate vibration offset
-		return amplitude * sinf(2.f * PI * frequency * (elapsed / 1000000.f));
+		return currVib.amplitude * sinf(2.f * PI * currVib.frequency * (elapsed / 1000000.f));
 	} else {
-		// Reset vibration parameters
-		amplitude = 0.f;
-		frequency = 0.f;
-		duration = 0.f;
+		// Move to next vibration command if available
+		goToNextVibration();
 
 		return 0.f;
 	}
@@ -208,7 +238,9 @@ void setup() {
 
 	// Register elevation smoothing handler
 	core->setHeaderHandler(ELEVATION_SPEED, elevationSmoothingHandler);
-  
+	
+	// Create vibration command queue
+	vibrationQueue = xQueueCreate(MAX_VIBRATION_COMMANDS, sizeof(VibrationCommand));
   	// Create RTOS tasks
  	xTaskCreatePinnedToCore(
     	pingTask,           // Task function
