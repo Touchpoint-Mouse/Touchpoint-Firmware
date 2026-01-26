@@ -43,10 +43,9 @@ enum ElevationVibrationHeaders {
 };
 
 // Vibration parameters
-VibrationCommand currVib = {0.f, 0.f, 0};
-VibrationCommand nextVib = {0.f, 0.f, 0};
+VibrationCommand currVib = {0.f, 0.f, 0, false};
+VibrationCommand nextVib = {0.f, 0.f, 0, false};
 bool hasNext = false;
-uint64_t startTime = 0;
 
 // Connection state
 volatile bool connectedToDesktop = false;
@@ -55,7 +54,8 @@ volatile bool connectedToDesktop = false;
 typedef struct {
 	float amplitude;
 	float frequency;
-	uint64_t duration;
+	uint64_t endTime;
+	bool indefinite;
 } VibrationCommand;
 
 QueueHandle_t vibrationQueue;
@@ -94,15 +94,26 @@ void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	// Read frequency from packet (unit is Hz)
 	float frequency = pkt->readFloat();
 	// Read duration from packet (unit is num cycles)
-	uint64_t duration = 0;
-	if (frequency <= 0.f) {
-		duration = 0;
+	uint16_t numCycles = pkt->readInt16();
+	
+	// Calculate endTime and indefinite flag
+	uint64_t currentTime = micros();
+	uint64_t endTime = 0;
+	bool indefinite = false;
+	
+	if (frequency <= 0.f || numCycles == 0) {
+		// Indefinite duration
+		indefinite = true;
+		endTime = 0;
 	} else {
-		uint16_t numCycles = pkt->readInt16();
-		duration = (uint64_t) (numCycles / frequency * 1000000); // convert to microseconds
+		// Calculate end time based on number of cycles
+		uint64_t duration = (uint64_t) (numCycles / frequency * 1000000); // convert to microseconds
+		endTime = currentTime + duration;
+		indefinite = false;
 	}
+	
 	// Adds vibration command to queue
-	VibrationCommand cmd = {amplitude, frequency, duration};
+	VibrationCommand cmd = {amplitude, frequency, endTime, indefinite};
 	xQueueSend(vibrationQueue, &cmd, 0);
 }
 
@@ -133,12 +144,12 @@ void goToNextVibration() {
 	if (hasNext) {
 		currVib = nextVib;
 		hasNext = false;
-		startTime = micros();
 	} else {
 		// No more commands, stop vibration
 		currVib.amplitude = 0.f;
 		currVib.frequency = 0.f;
-		currVib.duration = 0.f;
+		currVib.endTime = 0;
+		currVib.indefinite = false;
 	}
 }
 
@@ -153,11 +164,11 @@ float getVibrationOffset() {
 	if (currVib.amplitude <= 0.f || currVib.frequency <= 0.f) {
 		return 0.f;
 	}
-	uint64_t elapsed = micros() - startTime;
-	// Check if duration has not been exceeded (duration = 0 means infinite)
-	if (currVib.duration == 0 || elapsed < currVib.duration) {
+	uint64_t currentTime = micros();
+	// Check if duration has not been exceeded (indefinite = true means infinite)
+	if (currVib.indefinite || currentTime < currVib.endTime) {
 		// Calculate vibration offset
-		return currVib.amplitude * sinf(2.f * PI * currVib.frequency * (elapsed / 1000000.f));
+		return currVib.amplitude * sinf(2.f * PI * currVib.frequency * (currentTime / 1000000.f));
 	} else {
 		// Move to next vibration command if available
 		goToNextVibration();
