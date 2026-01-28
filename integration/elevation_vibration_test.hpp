@@ -42,14 +42,6 @@ enum ElevationVibrationHeaders {
 	VIBRATION = 0x20
 };
 
-// Vibration parameters
-VibrationCommand currVib = {0.f, 0.f, 0, false};
-VibrationCommand nextVib = {0.f, 0.f, 0, false};
-bool hasNext = false;
-
-// Connection state
-volatile bool connectedToDesktop = false;
-
 // RTOS queue for vibration commands
 typedef struct {
 	float amplitude;
@@ -59,6 +51,14 @@ typedef struct {
 } VibrationCommand;
 
 QueueHandle_t vibrationQueue;
+
+// Vibration parameters
+VibrationCommand currVib = {0.f, 0.f, 0, false};
+VibrationCommand nextVib = {0.f, 0.f, 0, false};
+bool hasNext = false;
+
+// Connection state
+volatile bool connectedToDesktop = false;
 
 // RTOS task function prototypes
 void pingTask(void* pvParameters);
@@ -233,7 +233,7 @@ void setup() {
 	                          I2C1_SDA, focCurrentPins[0][0], focCurrentPins[0][1]);
 
 	// Initialize motor AFTER joystick calibration
-    motor->begin(Direction::CCW, 3.92f, true);
+    motor->begin(Direction::CCW, 5.34f, true);
     motor->resetEncoder();
 	motor->setPosition(0.f);
   
