@@ -72,8 +72,6 @@ void elevationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	// Constrain elevation between 0 and 1
 	elevation = constrain(elevation, 0.f, 1.f);
 	elevationTarget = elevation;
-	// Sets last elevation time
-	lastElevationTime = micros();
 }
 
 // Elevation smoothing handler
@@ -121,6 +119,14 @@ float getSmoothedElevation() {
 	// Handle elevation smoothing
 	uint64_t currentTime = micros();
 	uint64_t elapsed = currentTime - lastElevationTime;
+	
+	// If no smoothing, immediately snap to target
+	if (maxElevationSpeed == 0.f) {
+		lastElevation = elevationTarget;
+		lastElevationTime = currentTime;
+		return lastElevation;
+	}
+	
 	float maxDelta = maxElevationSpeed * (elapsed / 1000000.f); // max change in elevation
 	if (elevationTarget > lastElevation) {
 		// Increase elevation towards target
