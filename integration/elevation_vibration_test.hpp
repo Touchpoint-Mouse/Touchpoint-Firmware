@@ -65,6 +65,16 @@ void pingTask(void* pvParameters);
 void updateTask(void* pvParameters);
 void focTask(void* pvParameters);
 
+// Ping handler
+void pingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
+	// Respond to ping
+	auto response = core->createPacket(PING);
+	core->sendPacket(response);
+
+	// Mark as connected
+	connectedToDesktop = true;
+}
+
 // Elevation feedback handler
 void elevationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	// Read elevation value from packet (float)
@@ -183,25 +193,6 @@ float getVibrationOffset() {
 	}
 }
 
-// Ping task - sends ping to desktop and waits for response
-void pingTask(void* pvParameters) {
-  std::shared_ptr<SongbirdCore::Packet> response = nullptr;
-  while (!response) {
-    // Send ping
-    auto pkt = core->createPacket(PING);
-    core->sendPacket(pkt);
-    
-    // Wait for response
-    response = core->waitForHeader(PING, 1000);
-    core->flush();
-  }
-  
-  connectedToDesktop = true;
-  
-  // Suspend this task - it's done
-  vTaskSuspend(NULL);
-}
-
 // FOC task - runs motor control loop at high frequency
 void focTask(void* pvParameters) {
   while (true) {
@@ -247,6 +238,9 @@ void setup() {
   	core = uart.getProtocol();
   	uart.begin(SERIAL_BAUD);
 
+	// Register ping handler
+	core->setHeaderHandler(PING, pingHandler);
+
 	// Register elevation feedback handler
 	core->setHeaderHandler(ELEVATION, elevationFeedbackHandler);
 
@@ -258,17 +252,8 @@ void setup() {
 	
 	// Create vibration command queue
 	vibrationQueue = xQueueCreate(MAX_VIBRATION_COMMANDS, sizeof(VibrationCommand));
+
   	// Create RTOS tasks
- 	xTaskCreatePinnedToCore(
-    	pingTask,           // Task function
-    	"Ping_Task",        // Task name
-    	4096,               // Stack size
-    	NULL,               // Parameters
-    	3,                  // Priority (highest - needs to connect first)
-    	&pingTaskHandle,    // Task handle
-    	0                   // Core 0
-  	);
-  
   	xTaskCreatePinnedToCore(
     	updateTask,         // Task function
     	"Update_Task",      // Task name
