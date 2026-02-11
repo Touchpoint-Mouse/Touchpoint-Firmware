@@ -6,11 +6,10 @@
 #define INTEGRATION_TESTING
 
 #ifdef INTEGRATION_TESTING
-#include <HydraFOCMotor.h>  // Force LDF to find the library'
 #include <Button.h>
-#include <SongbirdCore.h>
-#include <SongbirdUART.h>
-#include "../integration/elevation_vibration_test.hpp" // Testing file to run
+//#include <SongbirdCore.h>
+//#include <SongbirdUART.h>
+#include "../integration/blink.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 

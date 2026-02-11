@@ -1,0 +1,57 @@
+/*
+Hardware configuration for Raspberry Pi Pico prototype board for Touchpoint Mouse v0.2.
+*/
+
+#ifndef V0_2_CONFIG_H
+#define V0_2_CONFIG_H
+
+//External imports
+#include <Arduino.h>
+
+//////////////////////////////////////////////////////////////////
+// RTOS configuration
+//////////////////////////////////////////////////////////////////
+
+// RTOS core affinity
+uint8_t CORE_0 = 0;
+uint8_t CORE_1 = 1;
+
+//////////////////////////////////////////////////////////////////
+// Sensor configuration
+//////////////////////////////////////////////////////////////////
+
+#define IMU_MOSI 11
+#define IMU_MISO 12
+#define IMU_SCK 10
+#define IMU_CS 9
+
+#define OPTICAL_MOSI 3
+#define OPTICAL_MISO 0
+#define OPTICAL_SCK 2
+#define OPTICAL_CS 5
+
+//////////////////////////////////////////////////////////////////
+// User interface configuration
+//////////////////////////////////////////////////////////////////
+
+#define ZOOMWHEEL_A 15
+#define ZOOMWHEEL_B 14
+
+#define SCROLLWHEEL_A 13
+#define SCROLLWHEEL_B 8
+
+#define LEFT_BUTTON 17
+#define RIGHT_BUTTON 18
+
+#define NEOPIXEL_DIN 19
+
+//////////////////////////////////////////////////////////////////
+// Haptic actuator configuration
+//////////////////////////////////////////////////////////////////
+
+#define SERVO_PWM 22
+
+#define LRA_SCL 21
+#define LRA_SDA 20
+
+#endif // V0_2_CONFIG_H
