@@ -7,23 +7,54 @@
 #include <unordered_map>
 #include <queue>
 #include <functional>
-#include <atomic>
 #include <memory>
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/semphr.h"
-#include "freertos/task.h"
-#include "freertos/portmacro.h"
 #include <Arduino.h>
 
 #include "IStream.h"
 
-// Global RAII helper for spinlock critical sections
-struct SpinLockGuard {
-    portMUX_TYPE* mux;
-    explicit SpinLockGuard(portMUX_TYPE& m) : mux(&m) { portENTER_CRITICAL(mux); }
-    ~SpinLockGuard() { portEXIT_CRITICAL(mux); }
-};
+// Conditional spinlock implementation based on platform
+#if defined(ESP32)
+    // ESP32 FreeRTOS mutex semaphore
+    #include "freertos/FreeRTOS.h"
+    #include "freertos/semphr.h"
+    
+    struct SpinLockGuard {
+        SemaphoreHandle_t mutex;
+        explicit SpinLockGuard(SemaphoreHandle_t m) : mutex(m) { 
+            if (mutex) xSemaphoreTake(mutex, portMAX_DELAY); 
+        }
+        ~SpinLockGuard() { 
+            if (mutex) xSemaphoreGive(mutex); 
+        }
+    };
+    
+    typedef SemaphoreHandle_t SpinLock_t;
+    
+#elif defined(PICO_SDK)
+    // Raspberry Pi Pico SDK spinlock
+    #include "pico/critical_section.h"
+    
+    struct SpinLockGuard {
+        critical_section_t* cs;
+        explicit SpinLockGuard(critical_section_t& c) : cs(&c) { critical_section_enter_blocking(cs); }
+        ~SpinLockGuard() { critical_section_exit(cs); }
+    };
+    
+    typedef critical_section_t SpinLock_t;
+    #define SPINLOCK_INITIALIZER {}
+    
+#else
+    // Default: dummy spinlock (no-op for single-threaded environments)
+    struct SpinLockGuard {
+        explicit SpinLockGuard(int&) {}
+        ~SpinLockGuard() {}
+    };
+    
+    typedef int SpinLock_t;
+    #define SPINLOCK_INITIALIZER 0
+    
+#endif
 
 class SongbirdCore {
     public:
@@ -44,6 +75,10 @@ class SongbirdCore {
             bool operator==(const Remote& o) const {
                 return ip == o.ip && port == o.port;
             }
+            
+            bool operator!=(const Remote& o) const {
+                return !(*this == o);
+            }
         };
 
         struct RemoteExpected {
@@ -55,17 +90,10 @@ class SongbirdCore {
             }
         };
 
-        struct TimeoutID {
-            SongbirdCore* owner;
-            Remote remote;
-        };
-        
         struct RemoteOrder {
             uint8_t expectedSeqNum;
-            TimeoutID timeoutID;
-            TimerHandle_t missingTimer = nullptr;
+            uint32_t missingTimerStartMicros = 0;
             bool missingTimerActive = false;
-            bool needsTimerStart = false;
         };
 
         // Custom hash functor
@@ -89,9 +117,6 @@ class SongbirdCore {
                 return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1<<6) + (h1>>2));
             }
         };
-
-        // Timer helper for retransmission
-        struct RetransmitID { SongbirdCore* owner; uint8_t seq; };
 
         class Packet {
         public:
@@ -129,6 +154,11 @@ class SongbirdCore {
             void writeFloat(float value);
             // Writes a 16 bit integer
             void writeInt16(int16_t data);
+            // Writes a string with length prefix (uint16_t length + string bytes)
+            void writeString(const std::string& str);
+            // Writes a length-prefixed byte array (for protobuf messages)
+            void writeProtobuf(const uint8_t* buffer, std::size_t length);
+            void writeProtobuf(const std::vector<uint8_t>& data);
 
             // Reading functions (consume payload bytes)
             uint8_t readByte();
@@ -136,6 +166,10 @@ class SongbirdCore {
             void readBytes(uint8_t* buffer, std::size_t len);
             float readFloat();
             int16_t readInt16();
+            // Reads a length-prefixed string
+            std::string readString();
+            // Reads a length-prefixed byte array (for protobuf messages)
+            std::vector<uint8_t> readProtobuf();
 
             template <typename T>
             T readData();
@@ -160,7 +194,7 @@ class SongbirdCore {
         struct OutgoingInfo {
             std::shared_ptr<SongbirdCore::Packet> pkt;
             Remote remote;
-            TimerHandle_t timer = nullptr;
+            uint32_t sendTimeMicros = 0;
             uint8_t retransmitCount = 0;
         };
 
@@ -187,6 +221,9 @@ class SongbirdCore {
 
         // Attaches stream object
         void attachStream(IStream* stream);
+        
+        // Update method - call regularly to process timeouts
+        void update();
 
         ////////////////////////////////////////////
         // Specific to packet mode
@@ -245,7 +282,7 @@ class SongbirdCore {
         std::unordered_map<RemoteExpected, std::shared_ptr<SongbirdCore::Packet>, RemoteExpectedHasher> incomingPackets;
 
         // Outgoing packet sequence numbers
-        std::atomic<uint8_t> nextSeqNum;
+        uint8_t nextSeqNum;
 
         // Expected incoming packet sequence numbers by remotes
         std::unordered_map<Remote, RemoteOrder, RemoteHasher> remoteOrders;
@@ -265,12 +302,9 @@ class SongbirdCore {
         // Handlers by remotes
         std::unordered_map<Remote, ReadHandler, RemoteHasher> remoteHandlers;
 
-        TimerHandle_t startRetransmitTimer(uint8_t seqNum);
-
         std::shared_ptr<SongbirdCore::Packet> packetFromData(const uint8_t* data, std::size_t length);
         std::vector<std::shared_ptr<SongbirdCore::Packet>> reorderPackets();
-        std::vector<std::shared_ptr<SongbirdCore::Packet>> reorderRemote(const Remote remote, RemoteOrder& remoteOrder, std::vector<TimerHandle_t>& timersToStop);
-        TimerHandle_t startMissingTimer(RemoteOrder& remoteOrder);
+        std::vector<std::shared_ptr<SongbirdCore::Packet>> reorderRemote(const Remote remote, RemoteOrder& remoteOrder);
         
         // Helper to update or create remoteOrder entry
         void updateRemoteOrder(std::shared_ptr<Packet> pkt);
@@ -288,10 +322,14 @@ class SongbirdCore {
         bool allowOutofOrder = true;
 
         // Returns the next packet in readBuffer if there is one
-        std::shared_ptr<Packet> packetFromStream();
+        std::shared_ptr<Packet> packetFromStreamCOBS();
 
         // Buffer management
         void appendToReadBuffer(const uint8_t* data, std::size_t length);
+        
+        // COBS encoding/decoding utilities
+        static std::vector<uint8_t> cobsEncode(const uint8_t* data, std::size_t length);
+        static std::vector<uint8_t> cobsDecode(const uint8_t* data, std::size_t length);
         ////////////////////////////////////////
         // Both modes
 
@@ -305,10 +343,8 @@ class SongbirdCore {
         // Returns true if packet is an ACK (and should not be dispatched to handlers)
         bool checkForAck(std::shared_ptr<Packet> pkt);
 
-        // Short critical sections use a spinlock (portMUX). Longer operations
-        // can use semaphores if needed. Using spinlocks avoids heap usage and
-        // is suitable for short protected regions.
-        mutable portMUX_TYPE dataSpinlock;
+        // Spinlock for protecting data structures from concurrent access
+        mutable SpinLock_t dataSpinlock;
 
         //Read handler (global)
         ReadHandler readHandler;
@@ -333,7 +369,5 @@ T SongbirdCore::Packet::readData() {
 
     return data;
 }
-
-void missingTimerCallback(TimerHandle_t xTimer);
 
 #endif // SONGBIRD_CORE_H
