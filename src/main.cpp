@@ -9,9 +9,10 @@
 #include <Button.h>
 #include <RotEncoder.h>
 #include <DigitalServo.h>
+#include <Adafruit_NeoPixel.h>
 //#include <SongbirdCore.h>
 //#include <SongbirdUART.h>
-#include "../integration/user_inputs_test.hpp" // Testing file to run
+#include "../integration/imu_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 

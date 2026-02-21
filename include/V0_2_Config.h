@@ -20,15 +20,15 @@ uint8_t CORE_1 = 1;
 // Sensor configuration
 //////////////////////////////////////////////////////////////////
 
-#define IMU_MOSI 11
-#define IMU_MISO 12
-#define IMU_SCK 10
-#define IMU_CS 9
+#define SCL 21
+#define SDA 20
 
 #define OPTICAL_MOSI 3
 #define OPTICAL_MISO 0
 #define OPTICAL_SCK 2
 #define OPTICAL_CS 5
+#define OPTICAL_RST 4
+#define OPTICAL_INT 1
 
 //////////////////////////////////////////////////////////////////
 // User interface configuration
@@ -50,8 +50,5 @@ uint8_t CORE_1 = 1;
 //////////////////////////////////////////////////////////////////
 
 #define SERVO_PWM 22
-
-#define LRA_SCL 21
-#define LRA_SDA 20
 
 #endif // V0_2_CONFIG_H
