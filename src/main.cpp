@@ -7,9 +7,10 @@
 
 #ifdef INTEGRATION_TESTING
 #include <Button.h>
+#include <DigitalServo.h>
 //#include <SongbirdCore.h>
 //#include <SongbirdUART.h>
-#include "../integration/blink.hpp" // Testing file to run
+#include "../integration/servo_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 
