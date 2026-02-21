@@ -1,0 +1,7 @@
+RotEncoder		KEYWORD1
+update		KEYWORD2
+dir			KEYWORD2
+steps			KEYWORD2
+cw_steps		KEYWORD2
+reset			KEYWORD2
+clicked		KEYWORD2

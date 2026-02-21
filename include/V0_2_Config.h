@@ -37,8 +37,8 @@ uint8_t CORE_1 = 1;
 #define ZOOMWHEEL_A 15
 #define ZOOMWHEEL_B 14
 
-#define SCROLLWHEEL_A 13
-#define SCROLLWHEEL_B 8
+#define SCROLLWHEEL_A 8
+#define SCROLLWHEEL_B 13
 
 #define LEFT_BUTTON 17
 #define RIGHT_BUTTON 18
