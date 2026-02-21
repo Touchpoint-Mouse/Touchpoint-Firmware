@@ -11,19 +11,27 @@ Tests buttons and scroll wheel inputs by printing their states to the serial mon
 #include "V0_2_Config.h"
 
 // Initialize buttons and rotary encoder with appropriate pins
-Button leftButton(LEFT_BUTTON, true); // Left mouse button
-Button rightButton(RIGHT_BUTTON, true); // Right mouse button
-RotEncoder scrollWheel(SCROLLWHEEL_A, SCROLLWHEEL_B); // Scroll wheel encoder
-RotEncoder zoomWheel(ZOOMWHEEL_A, ZOOMWHEEL_B); // Zoom wheel encoder
+Button leftButton(3, PullMode::PULLUP); // Left mouse button with debounce of 3ms
+Button rightButton(3, PullMode::PULLUP); // Right mouse button with debounce of 3ms
+RotEncoder scrollWheel(3, EncoderResolution::DOUBLE); // Scroll wheel encoder with double resolution
+RotEncoder zoomWheel(3, EncoderResolution::SINGLE); // Zoom wheel encoder with single resolution
 
 void setup() {
     Serial.begin(115200);
+
+    // Uses internal pullups for testing without external resistors
     pinMode(LEFT_BUTTON, INPUT_PULLUP);
     pinMode(RIGHT_BUTTON, INPUT_PULLUP);
     pinMode(SCROLLWHEEL_A, INPUT_PULLUP);
     pinMode(SCROLLWHEEL_B, INPUT_PULLUP);
     pinMode(ZOOMWHEEL_A, INPUT_PULLUP);
     pinMode(ZOOMWHEEL_B, INPUT_PULLUP);
+    
+    // Attach pins to buttons and encoders
+    leftButton.attach(LEFT_BUTTON);
+    rightButton.attach(RIGHT_BUTTON);
+    scrollWheel.attach(SCROLLWHEEL_A, SCROLLWHEEL_B);
+    zoomWheel.attach(ZOOMWHEEL_A, ZOOMWHEEL_B);
 }
 
 void loop() {
@@ -60,4 +68,4 @@ void loop() {
     }
 }
 
-#endif // USER_INTERFACES_TEST_HPP
+#endif // USER_INPUTS_TEST_HPP

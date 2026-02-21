@@ -34,7 +34,7 @@ uint8_t CORE_1 = 1;
 // User interface configuration
 //////////////////////////////////////////////////////////////////
 
-#define ZOOMWHEEL_A 15
+#define ZOOMWHEEL_A 7
 #define ZOOMWHEEL_B 14
 
 #define SCROLLWHEEL_A 8

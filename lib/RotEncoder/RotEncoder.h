@@ -10,6 +10,11 @@
 #include "Arduino.h"
 #include <Button.h>
 
+enum class EncoderResolution {
+	SINGLE = 0,
+	DOUBLE = 1
+};
+
 class RotEncoder {
     private:
         //Click button
@@ -18,6 +23,8 @@ class RotEncoder {
         //Delay button
         Button delay;
 
+        //Whether to use double resolution (counts both rising and falling edges of click)
+		EncoderResolution resolution = EncoderResolution::SINGLE;
         //Enocoder step event
         bool was_moved = false;
 
@@ -31,9 +38,11 @@ class RotEncoder {
         bool rot_dir = true;
 
     public:
-        RotEncoder(int _click, int _delay);
-        RotEncoder(int _click, int _delay, int _bounce);
+        RotEncoder();
+        RotEncoder(int _debounce);
+        RotEncoder(int _debounce, EncoderResolution _resolution);
 
+        void attach(int _click, int _delay);
         void update();
 
 		bool dir();

@@ -7,9 +7,18 @@
 #include "Arduino.h"
 #include "RotEncoder.h"
 
-RotEncoder::RotEncoder(int _click, int _delay) : click (Button(_click)), delay (Button(_delay)) {
+RotEncoder::RotEncoder() : click(Button()), delay(Button()) {
 }
-RotEncoder::RotEncoder(int _click, int _delay, int _bounce) : click (Button(_click, _bounce)), delay (Button(_delay, _bounce)) {
+
+RotEncoder::RotEncoder(int _debounce) : click(Button(_debounce)), delay(Button(_debounce)) {
+}
+
+RotEncoder::RotEncoder(int _debounce, EncoderResolution _resolution) : click(Button(_debounce)), delay(Button(_debounce)), resolution(_resolution) {
+}
+
+void RotEncoder::attach(int _click, int _delay) {
+	click.attach(_click);
+	delay.attach(_delay);
 }
 
 void RotEncoder::update() {
@@ -20,7 +29,7 @@ void RotEncoder::update() {
 	delay.update();
 
 	//If click has changed (rising or falling edge)
-	if (click.change()) {
+	if ((resolution == EncoderResolution::DOUBLE && click.change()) || (resolution == EncoderResolution::SINGLE && click.changeTo(HIGH))) {
 		//Sets click event to true
 		was_moved = true;
 
