@@ -12,7 +12,7 @@
 #include <Adafruit_NeoPixel.h>
 //#include <SongbirdCore.h>
 //#include <SongbirdUART.h>
-#include "../integration/haptic_driver_test.hpp" // Testing file to run
+#include "../integration/PMW3389_interrupt_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 
