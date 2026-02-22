@@ -10,9 +10,14 @@
 #include <RotEncoder.h>
 #include <DigitalServo.h>
 #include <Adafruit_NeoPixel.h>
+// Adafruit TinyUSB only for ESP32 (RP2040 has built-in USB support)
+#ifndef ARDUINO_ARCH_RP2040
+#include <Adafruit_TinyUSB.h>
+#endif
+#include <Adafruit_BNO08x.h>
 //#include <SongbirdCore.h>
 //#include <SongbirdUART.h>
-#include "../integration/PMW3389_interrupt_test.hpp" // Testing file to run
+#include "../integration/mouse_emulator_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 
