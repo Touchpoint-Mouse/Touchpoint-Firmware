@@ -6,7 +6,7 @@
 #include <Wire.h>
 #include <Adafruit_BNO08x.h>
 
-Adafruit_BNO08x  bno08x(-1); // No reset pin
+Adafruit_BNO08x  bno08x(IMU_RST);
 sh2_SensorValue_t sensorValue;
 
 void setReports(void);
@@ -15,17 +15,17 @@ void setup(void) {
   Serial.begin(115200);
   while (!Serial) delay(10);     // will pause Zero, Leonardo, etc until serial console opens
 
+  SPI1.setSCK(IMU_SCK);
+  SPI1.setTX(IMU_MOSI);
+  SPI1.setRX(IMU_MISO);
+  SPI1.begin();
+
   Serial.println("Adafruit BNO08x test!");
 
-  // Initialize I2C with pins from config
-  Wire.setSDA(SDA);
-  Wire.setSCL(SCL);
-  Wire.begin();
-
   // Try to initialize!
-  if (!bno08x.begin_I2C(BNO08x_I2CADDR_DEFAULT, &Wire)) {
+  if (!bno08x.begin_SPI(IMU_CS, IMU_INT, &SPI1)) {
     Serial.println("Failed to find BNO08x chip");
-    while (1) { delay(10); }
+    return;
   }
   Serial.println("BNO08x Found!");
 

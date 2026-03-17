@@ -23,6 +23,13 @@ uint8_t CORE_1 = 1;
 #define SCL 21
 #define SDA 20
 
+#define IMU_MOSI 11
+#define IMU_MISO 12
+#define IMU_SCK 10
+#define IMU_CS 9
+#define IMU_INT 6
+#define IMU_RST 7
+
 #define OPTICAL_MOSI 3
 #define OPTICAL_MISO 0
 #define OPTICAL_SCK 2
@@ -34,21 +41,21 @@ uint8_t CORE_1 = 1;
 // User interface configuration
 //////////////////////////////////////////////////////////////////
 
-#define ZOOMWHEEL_A 7
-#define ZOOMWHEEL_B 14
+#define ZOOMWHEEL_A 26
+#define ZOOMWHEEL_B 27
 
-#define SCROLLWHEEL_A 8
-#define SCROLLWHEEL_B 13
+#define SCROLLWHEEL_A 17
+#define SCROLLWHEEL_B 18
 
-#define LEFT_BUTTON 17
-#define RIGHT_BUTTON 18
+#define LEFT_BUTTON 13
+#define RIGHT_BUTTON 28
 
-#define NEOPIXEL_DIN 19
+#define NEOPIXEL_DIN 8
 
 //////////////////////////////////////////////////////////////////
 // Haptic actuator configuration
 //////////////////////////////////////////////////////////////////
 
-#define SERVO_PWM 22
+#define SERVO_PWM 14
 
 #endif // V0_2_CONFIG_H
