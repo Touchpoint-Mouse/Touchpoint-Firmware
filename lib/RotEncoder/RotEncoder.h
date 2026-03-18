@@ -16,7 +16,13 @@ enum class EncoderResolution {
 };
 
 class RotEncoder {
-    private:
+public:
+    enum class Direction {
+        CW = 0,
+        CCW = 1
+    };
+
+private:
         //Click button
         Button click;
 
@@ -29,33 +35,38 @@ class RotEncoder {
         bool was_moved = false;
 
         //Total steps of encoder
-        int tot_steps = 0;
+        int32_t tot_steps = 0;
 
 	  	//Net clockwise steps of encoder
-        int net_steps = 0;
+        int32_t net_steps = 0;
 
         //Current rotational direction (cw is true)
         bool rot_dir = true;
 
-    public:
-        RotEncoder();
-        RotEncoder(int _debounce);
-        RotEncoder(int _debounce, EncoderResolution _resolution);
+        //Configured positive direction for this encoder.
+        Direction directionSetting = Direction::CW;
 
-        void attach(int _click, int _delay);
-        void update();
+public:
+    RotEncoder();
+    RotEncoder(int _debounce);
+    RotEncoder(int _debounce, EncoderResolution _resolution);
 
-		bool dir();
+    void attach(int _click, int _delay);
+    void update();
 
-		int steps();
+    bool dir();
 
-		int cw_steps();
+    int32_t steps();
 
-		void reset();
+    int32_t netSteps();
 
-        bool hasMoved();
+    void setDirection(Direction direction);
 
-        bool hasMovedInDir(bool _dir);
+    void reset();
+
+    bool hasMoved();
+
+    bool hasMovedInDir(bool _dir);
 };
 
 #endif

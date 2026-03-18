@@ -37,7 +37,8 @@ void RotEncoder::update() {
 		tot_steps++;
 
 		//Direction is clockwise (true) if click and delay are not equal
-		rot_dir = (click.state() == delay.state());
+		const bool physicalCw = (click.state() == delay.state());
+		rot_dir = (directionSetting == Direction::CW) ? physicalCw : !physicalCw;
 
 		//Increments or decrements net steps (cw (true) is positive)
 		net_steps += int(rot_dir)*2 - 1;
@@ -51,14 +52,18 @@ bool RotEncoder::dir() {
 	return rot_dir;
 }
 
-int RotEncoder::steps() {
+int32_t RotEncoder::steps() {
 	//Gets total steps
 	return tot_steps;
 }
 
-int RotEncoder::cw_steps() {
+int32_t RotEncoder::netSteps() {
 	//Gets net clockwise steps
 	return net_steps;
+}
+
+void RotEncoder::setDirection(Direction direction) {
+	directionSetting = direction;
 }
 
 void RotEncoder::reset() {

@@ -16,7 +16,7 @@ class IMU {
 public:
     IMU(uint8_t rstPin);
 	bool begin(SPIClass* spi, uint8_t csPin, uint8_t intPin);
-    bool getRotationVector(Vector4f& rotationVector);
+    bool getRotationVector(Quaternionf& rotationVector);
 private:
 	Adafruit_BNO08x bno08x;
     sh2_SensorValue_t sensorValue;

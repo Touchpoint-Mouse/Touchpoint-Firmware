@@ -20,12 +20,39 @@ MouseDriver::MouseDriver(
 
 void MouseDriver::begin() {
 	Mouse.begin();
-	prevScrollSteps = scrollWheel.cw_steps();
-	prevZoomSteps = zoomWheel.cw_steps();
+
+	// Reset wheel counters so real wheel state starts at zero at begin().
+	scrollWheel.reset();
+	zoomWheel.reset();
+
+	// Proxy wheel state is accumulated scaled HID steps sent to host.
+	proxyScrollSent = 0;
+	proxyZoomSent = 0;
+
+	// Pointer states start at origin:
+	// real state in mm, proxy state as sent pixel deltas.
+	realPointerMm = Vector2d::Zero();
+	proxyPointerXPixels = 0;
+	proxyPointerYPixels = 0;
+
+	// Reset IMU reference frame state at startup.
+	lifted = true;
+	sensorReadings.lifted = true;
+	sensorReadings.imuValid = false;
+	lastRotation = Matrix2f::Identity();
+	initialOrient = Matrix2f::Identity();
+	updateRelativeImuRotation();
+
+	opticalSensor.setCpi(cpi);
 }
 
 MouseDriver::SensorReadings MouseDriver::getSensorReadings() const {
 	return sensorReadings;
+}
+
+bool MouseDriver::setCPI(uint16_t cpi) {
+	this->cpi = cpi;
+	return opticalSensor.setCpi(cpi);
 }
 
 void MouseDriver::setPointerSensitivity(float sensitivity) {
@@ -46,34 +73,44 @@ void MouseDriver::setZoomSensitivity(float sensitivity) {
 	}
 }
 
+void MouseDriver::setHeadlessModeEnabled(bool enabled) {
+	headlessModeEnabled = enabled;
+}
+
+void MouseDriver::setImuZAxisOrientation(ImuZAxisOrientation orientation) {
+	imuZAxisOrientation = orientation;
+	updateRelativeImuRotation();
+}
+
 void MouseDriver::setOpticalRotation(OpticalRotation rotation) {
 	opticalRotation = rotation;
 }
 
 void MouseDriver::setScrollClockwisePositive(bool clockwisePositive) {
-	scrollClockwisePositive = clockwisePositive;
+	scrollWheel.setDirection(clockwisePositive ? RotEncoder::Direction::CW : RotEncoder::Direction::CCW);
 }
 
 void MouseDriver::setZoomClockwisePositive(bool clockwisePositive) {
-	zoomClockwisePositive = clockwisePositive;
+	zoomWheel.setDirection(clockwisePositive ? RotEncoder::Direction::CW : RotEncoder::Direction::CCW);
 }
 
 void MouseDriver::update() {
+	// One combined HID report per cycle.
 	cycleMoveX = 0;
 	cycleMoveY = 0;
 	cycleWheel = 0;
 
 	handleButtons();
 	handleWheels();
-	handleOptical();
 	handleImu();
+	handleOptical();
 
 	if (cycleMoveX != 0 || cycleMoveY != 0 || cycleWheel != 0) {
 		Mouse.move(clampToHid(cycleMoveX), clampToHid(cycleMoveY), clampToHid(cycleWheel));
 	}
 }
 
-int8_t MouseDriver::clampToHid(int16_t value) const {
+int8_t MouseDriver::clampToHid(int32_t value) const {
 	if (value > 127) {
 		return 127;
 	}
@@ -83,35 +120,27 @@ int8_t MouseDriver::clampToHid(int16_t value) const {
 	return static_cast<int8_t>(value);
 }
 
-int16_t MouseDriver::applySensitivity(int16_t value, float sensitivity) const {
-	const float scaled = static_cast<float>(value) * sensitivity;
-	if (scaled > 32767.0f) {
-		return 32767;
-	}
-	if (scaled < -32768.0f) {
-		return -32768;
-	}
-	return static_cast<int16_t>(lroundf(scaled));
+void MouseDriver::updateRelativeImuRotation() {
+	relativeImuRotation = initialOrient.transpose() * lastRotation;
 }
 
-void MouseDriver::applyOpticalRotation(int16_t inX, int16_t inY, int16_t& outX, int16_t& outY) const {
+void MouseDriver::applyOpticalRotation(const Vector2f& in, Vector2f& out) const {
 	switch (opticalRotation) {
 		case OpticalRotation::Deg90:
-			outX = inY;
-			outY = static_cast<int16_t>(-inX);
+			out.x() = in.y();
+			out.y() = -in.x();
 			break;
 		case OpticalRotation::Deg180:
-			outX = static_cast<int16_t>(-inX);
-			outY = static_cast<int16_t>(-inY);
+			out.x() = -in.x();
+			out.y() = -in.y();
 			break;
 		case OpticalRotation::Deg270:
-			outX = static_cast<int16_t>(-inY);
-			outY = inX;
+			out.x() = -in.y();
+			out.y() = in.x();
 			break;
 		case OpticalRotation::Deg0:
 		default:
-			outX = inX;
-			outY = inY;
+			out = in;
 			break;
 	}
 }
@@ -139,32 +168,30 @@ void MouseDriver::handleWheels() {
 	scrollWheel.update();
 	zoomWheel.update();
 
-	const int scrollSteps = scrollWheel.cw_steps();
-	const int zoomSteps = zoomWheel.cw_steps();
+	// Absolute net encoder state is the source of truth.
+	const int32_t realScrollSteps = scrollWheel.netSteps();
+	const int32_t realZoomSteps = zoomWheel.netSteps();
 
-	sensorReadings.scrollSteps = scrollSteps;
-	sensorReadings.zoomSteps = zoomSteps;
+	sensorReadings.scrollSteps = realScrollSteps;
+	sensorReadings.zoomSteps = realZoomSteps;
 
-	prevScrollSteps = scrollSteps;
-	prevZoomSteps = zoomSteps;
+	// Scroll reconciliation pipeline:
+	// real (unscaled steps) -> compare to unscaled proxy -> rescale -> clamp -> send.
+	// Proxy stores scaled HID steps sent to host.
+	const float scrollProxyUnscaled = proxyScrollSent / scrollSensitivity;
+	const float scrollErrorUnscaled = realScrollSteps - scrollProxyUnscaled;
+	const int32_t scrollDeltaHid = static_cast<int32_t>(lroundf(scrollErrorUnscaled * scrollSensitivity));
+	const int8_t scrollStepHid = clampToHid(scrollDeltaHid);
+	cycleWheel += scrollStepHid;
+	proxyScrollSent += scrollStepHid;
 
-	if (scrollWheel.hasMoved()) {
-		int16_t scrollStep = scrollWheel.dir() ? 1 : -1;
-		if (!scrollClockwisePositive) {
-			scrollStep = static_cast<int16_t>(-scrollStep);
-		}
-		const int16_t scaledScroll = applySensitivity(scrollStep, scrollSensitivity);
-		cycleWheel += scaledScroll;
-	}
-
-	if (zoomWheel.hasMoved()) {
-		int16_t zoomStep = zoomWheel.dir() ? 1 : -1;
-		if (!zoomClockwisePositive) {
-			zoomStep = static_cast<int16_t>(-zoomStep);
-		}
-		const int16_t scaledZoom = applySensitivity(zoomStep, zoomSensitivity);
-		cycleMoveX += scaledZoom;
-	}
+	// Zoom reconciliation follows the same model and maps to X-axis movement.
+	const float zoomProxyUnscaled = proxyZoomSent / zoomSensitivity;
+	const float zoomErrorUnscaled = realZoomSteps - zoomProxyUnscaled;
+	const int32_t zoomDeltaHid = static_cast<int32_t>(lroundf(zoomErrorUnscaled * zoomSensitivity));
+	const int8_t zoomStepHid = clampToHid(zoomDeltaHid);
+	cycleMoveX += zoomStepHid;
+	proxyZoomSent += zoomStepHid;
 }
 
 void MouseDriver::handleOptical() {
@@ -177,8 +204,16 @@ void MouseDriver::handleOptical() {
 	sensorReadings.optical = motionData;
 	sensorReadings.opticalValid = true;
 
+	const bool wasLifted = lifted;
 	lifted = !motionData.onSurface;
 	sensorReadings.lifted = lifted;
+
+	if (wasLifted && !lifted) {
+		// Re-zero IMU-relative frame when touching down again.
+		initialOrient = lastRotation;
+		updateRelativeImuRotation();
+	}
+
 	if (lifted || !motionData.hasMotion) {
 		return;
 	}
@@ -187,20 +222,71 @@ void MouseDriver::handleOptical() {
 		return;
 	}
 
-	const int16_t scaledX = applySensitivity(motionData.deltaX, pointerSensitivity);
-	const int16_t scaledY = applySensitivity(motionData.deltaY, pointerSensitivity);
-	int16_t rotatedX = 0;
-	int16_t rotatedY = 0;
-	applyOpticalRotation(scaledX, scaledY, rotatedX, rotatedY);
-	cycleMoveX += rotatedX;
-	cycleMoveY += rotatedY;
+	// Keep optical data in configured sensor frame first.
+	const Vector2f sensorDelta(motionData.deltaX, motionData.deltaY);
+    Vector2f configuredSensorDelta;
+    applyOpticalRotation(sensorDelta, configuredSensorDelta);
+
+	// Optionally transform sensor delta into IMU-relative frame before pointer adjustment.
+	const Vector2f pointerCountsDelta = headlessModeEnabled
+		? (relativeImuRotation * configuredSensorDelta)
+		: configuredSensorDelta;
+	updatePointerState(pointerCountsDelta);
 }
 
 void MouseDriver::handleImu() {
-	Eigen::Vector4f rotation;
+	Quaternionf rotation;
 	if (imu.getRotationVector(rotation)) {
-		lastRotation = rotation;
-		sensorReadings.imuRotation = rotation;
+		quaternionToZRotMatrix(rotation, lastRotation);
+		updateRelativeImuRotation();
+		sensorReadings.imuRotation[0] = rotation.w();
+		sensorReadings.imuRotation[1] = rotation.x();
+		sensorReadings.imuRotation[2] = rotation.y();
+		sensorReadings.imuRotation[3] = rotation.z();
 		sensorReadings.imuValid = true;
+	} else {
+		sensorReadings.imuValid = false;
 	}
+}
+
+void MouseDriver::updatePointerState(const Vector2f& relativeCountsDelta) {
+	// Real pointer path in highest available precision (mm).
+	const double countsPerMm = cpi / 25.4;
+	realPointerMm += relativeCountsDelta.cast<double>() / countsPerMm;
+
+	// Proxy reconciliation:
+	// proxy stores sent pixels; unscale to mm, compare against real mm,
+	// then rescale/clamp for this HID report.
+	const float pointerSensitivityF = pointerSensitivity;
+	const float countsPerMmF = countsPerMm;
+	const float proxyXmm = (proxyPointerXPixels / pointerSensitivityF) / countsPerMmF;
+	const float proxyYmm = (proxyPointerYPixels / pointerSensitivityF) / countsPerMmF;
+	const float errorXmm = realPointerMm.x() - proxyXmm;
+	const float errorYmm = realPointerMm.y() - proxyYmm;
+
+	const float errorXCounts = errorXmm * countsPerMmF;
+	const float errorYCounts = errorYmm * countsPerMmF;
+	const int32_t deltaXHid = static_cast<int32_t>(lroundf(errorXCounts * pointerSensitivityF));
+	const int32_t deltaYHid = static_cast<int32_t>(lroundf(errorYCounts * pointerSensitivityF));
+	const int8_t stepX = clampToHid(deltaXHid);
+	const int8_t stepY = clampToHid(deltaYHid);
+
+	cycleMoveX += stepX;
+	cycleMoveY += stepY;
+	proxyPointerXPixels += stepX;
+	proxyPointerYPixels += stepY;
+}
+
+void MouseDriver::quaternionToZRotMatrix(const Quaternionf& quat, Matrix2f& rotMatrix) const {
+	// Build a 2D yaw-only rotation matrix from quaternion components.
+	const float qw = quat.w();
+	const float qz = quat.z();
+	const float yawCos = (qw * qw) - (qz * qz);
+	const float yawSign = (imuZAxisOrientation == ImuZAxisOrientation::Up) ? 1.0f : -1.0f;
+	const float yawSin = yawSign * 2.0f * qw * qz;
+
+	rotMatrix(0, 0) = yawCos;
+	rotMatrix(0, 1) = -yawSin;
+	rotMatrix(1, 0) = yawSin;
+	rotMatrix(1, 1) = yawCos;
 }

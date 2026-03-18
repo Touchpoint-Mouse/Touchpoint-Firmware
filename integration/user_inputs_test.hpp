@@ -57,7 +57,7 @@ void loop() {
         Serial.print("Steps: ");
         Serial.print(scrollWheel.steps());
         Serial.print(" | CW Steps: ");
-        Serial.print(scrollWheel.cw_steps());
+        Serial.print(scrollWheel.netSteps());
         Serial.print(" | Direction: ");
         Serial.println(scrollWheel.dir() ? "CW" : "CCW");
     }
@@ -66,7 +66,7 @@ void loop() {
         Serial.print("Steps: ");
         Serial.print(zoomWheel.steps());
         Serial.print(" | CW Steps: ");
-        Serial.print(zoomWheel.cw_steps());
+        Serial.print(zoomWheel.netSteps());
         Serial.print(" | Direction: ");
         Serial.println(zoomWheel.dir() ? "CW" : "CCW");
     }

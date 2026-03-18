@@ -18,12 +18,12 @@ bool IMU::setReports() {
   return bno08x.enableReport(SH2_ROTATION_VECTOR);
 }
 
-bool IMU::getRotationVector(Vector4f& rotationVector) {
+bool IMU::getRotationVector(Quaternionf& rotationVector) {
 	if (bno08x.getSensorEvent(&sensorValue)) {
-		rotationVector[0] = sensorValue.un.gameRotationVector.real;
-		rotationVector[1] = sensorValue.un.gameRotationVector.i;
-		rotationVector[2] = sensorValue.un.gameRotationVector.j;
-		rotationVector[3] = sensorValue.un.gameRotationVector.k;
+		rotationVector.w() = sensorValue.un.gameRotationVector.real;
+		rotationVector.x() = sensorValue.un.gameRotationVector.i;
+		rotationVector.y() = sensorValue.un.gameRotationVector.j;
+		rotationVector.z() = sensorValue.un.gameRotationVector.k;
 		return true;
 	}
 	return false;

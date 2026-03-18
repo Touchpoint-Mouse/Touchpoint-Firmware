@@ -192,14 +192,16 @@ void setup() {
 			vTaskDelay(pdMS_TO_TICKS(1000));
 		}
 	}
-	opticalSensor.setCpi(1100);
 
 	
 
 	mouseDriver.begin();
+	mouseDriver.setCPI(1100);
+	mouseDriver.setHeadlessModeEnabled(true);
 	mouseDriver.setPointerSensitivity(0.05f);
 	mouseDriver.setScrollSensitivity(1.0f);
 	mouseDriver.setZoomSensitivity(1.0f);
+	mouseDriver.setImuZAxisOrientation(MouseDriver::ImuZAxisOrientation::Down);
 	mouseDriver.setOpticalRotation(MouseDriver::OpticalRotation::Deg270);
 	mouseDriver.setScrollClockwisePositive(true);
 	mouseDriver.setZoomClockwisePositive(true);
