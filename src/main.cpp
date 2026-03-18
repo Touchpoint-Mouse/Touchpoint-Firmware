@@ -79,6 +79,9 @@ void vMouseTask(void* pvParameters) {
 
 	for (;;) {
 		mouseDriver.update();
+		if (leftButton.changeTo(HIGH)) {
+			hapticDriver.playEffect(24); // Play a click effect
+		}
 		vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(1));
 	}
 }

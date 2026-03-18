@@ -14,7 +14,6 @@ class HapticDriver {
     public:
         HapticDriver();
         bool begin(TwoWire* wire=&Wire);
-        void setEffect(uint8_t effect);
         bool playEffect(uint8_t effect);
         bool queueEffect(uint8_t effect);
         void clearQueue();

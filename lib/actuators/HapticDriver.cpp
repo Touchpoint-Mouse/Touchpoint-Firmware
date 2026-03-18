@@ -27,10 +27,6 @@ bool HapticDriver::begin(TwoWire* wire) {
     return true;
 }
 
-void HapticDriver::setEffect(uint8_t effect) {
-    playEffect(effect);
-}
-
 bool HapticDriver::playEffect(uint8_t effect) {
     clearQueue();
     if (!queueEffect(effect)) {
