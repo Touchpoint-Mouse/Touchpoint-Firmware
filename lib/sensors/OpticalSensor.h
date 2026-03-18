@@ -90,6 +90,11 @@ public:
   // Returns false when the sensor is not initialized.
   bool poll(MotionData& outData);
 
+  // Sets native sensor CPI (counts per inch). PMW3389 supports 50 CPI steps.
+  // Valid range is clamped to [50, 16000].
+  bool setCpi(uint16_t cpi);
+  uint16_t getCpi() const;
+
   // True after a successful begin() sequence.
   bool isInitialized() const;
 
@@ -104,6 +109,7 @@ private:
   uint8_t mosiPin_;
   bool initialized_;
   bool burstReady_;
+  uint16_t cpi_;
   SPISettings spiSettings_;
 
   void select();

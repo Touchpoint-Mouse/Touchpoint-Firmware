@@ -25,6 +25,7 @@ OpticalSensor::OpticalSensor(
 	mosiPin_(mosiPin),
 	initialized_(false),
 	burstReady_(false),
+	cpi_(1100),
 	spiSettings_(2000000, MSBFIRST, SPI_MODE3) {}
 
 bool OpticalSensor::begin() {
@@ -90,6 +91,28 @@ bool OpticalSensor::isInitialized() const {
 	return initialized_;
 }
 
+bool OpticalSensor::setCpi(uint16_t cpi) {
+	if (!initialized_) {
+		return false;
+	}
+
+	if (cpi < 50) {
+		cpi = 50;
+	}
+	if (cpi > 16000) {
+		cpi = 16000;
+	}
+
+	const uint8_t regValue = static_cast<uint8_t>((cpi / 50) - 1);
+	writeReg(PMW3389::Config1, regValue);
+	cpi_ = static_cast<uint16_t>((regValue + 1) * 50);
+	return true;
+}
+
+uint16_t OpticalSensor::getCpi() const {
+	return cpi_;
+}
+
 void OpticalSensor::select() {
 	digitalWrite(csPin_, LOW);
 }
@@ -148,7 +171,7 @@ void OpticalSensor::uploadFirmware() {
 	// Verify SROM load and apply baseline run configuration.
 	readReg(PMW3389::SROM_ID);
 	writeReg(PMW3389::Config2, 0x00);
-	writeReg(PMW3389::Config1, 0x15);
+	writeReg(PMW3389::Config1, static_cast<uint8_t>((cpi_ / 50) - 1));
 	writeReg(PMW3389::Lift_Config, 0x02);
 	delay(1);
 	writeReg(PMW3389::Min_SQ_Run, 0x01);

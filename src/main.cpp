@@ -9,7 +9,6 @@
 #include <Button.h>
 #include <RotEncoder.h>
 #include <DigitalServo.h>
-#include <Adafruit_NeoPixel.h>
 #include <Adafruit_BNO08x.h>
 //#include <SongbirdCore.h>
 //#include <SongbirdUART.h>
@@ -24,8 +23,6 @@
 #include <Button.h>
 #include <RotEncoder.h>
 #include <DigitalServo.h>
-#include <Adafruit_NeoPixel.h>
-#include <Adafruit_BNO08x.h>
 #include <SongbirdCore.h>
 #include <SongbirdUART.h>
 
@@ -33,9 +30,15 @@
 #include "HapticDriver.h"
 #include "OpticalSensor.h"
 #include "MouseDriver.h"
+#include "IMU.h"
+#include "LightState.h"
 
-// Initialize neopixel
-Adafruit_NeoPixel pixel(1, NEOPIXEL_DIN, NEO_GRB + NEO_KHZ800);
+// Initialize light state machine
+LightState lightState(NEOPIXEL_DIN);
+LightState::OffEffect lightOff;
+LightState::SolidEffect lightSolid(LightState::colorFromPreset(LightState::LightColor::Cyan));
+LightState::RainbowEffect lightRainbow(64, 1.0f, 255, 0);
+LightState::PulseEffect lightPulse(180, 1.5f, {255, 64, 32}, 0.0f);
 
 // Initialize buttons and rotary encoder
 Button leftButton(3, PullMode::PULLUP); // Left mouse button with debounce of 3ms
@@ -52,55 +55,39 @@ HapticDriver hapticDriver;
 // Initialize optical sensor
 OpticalSensor opticalSensor;
 
-// Initialize mouse driver
-MouseDriver mouseDriver;
-
 // Initialize IMU
-Adafruit_BNO08x  bno08x(IMU_RST);
-sh2_SensorValue_t sensorValue;
+IMU imu(IMU_RST);
 
-void setReports(void);
+// Initialize mouse driver
+MouseDriver mouseDriver(opticalSensor, imu, scrollWheel, zoomWheel, leftButton, rightButton);
 
-TaskHandle_t gBlinkTaskHandle = nullptr;
-TaskHandle_t gOpticalPollTaskHandle = nullptr;
-bool gOpticalSensorReady = false;
+TaskHandle_t gMouseTaskHandle = nullptr;
+TaskHandle_t gLightTaskHandle = nullptr;
 
-void vBlinkTask(void* pvParameters) {
+void vLightTask(void* pvParameters) {
 	(void)pvParameters;
-	uint16_t hue = 0;
 
 	for (;;) {
-		pixel.setPixelColor(0, pixel.gamma32(pixel.ColorHSV(hue, 255, 50)));
-		pixel.show();
-
-		hue += 256;
+		lightState.update();
 		vTaskDelay(pdMS_TO_TICKS(5));
 	}
 }
 
-void vOpticalPollTask(void* pvParameters) {
+void vMouseTask(void* pvParameters) {
 	(void)pvParameters;
-	if (!gOpticalSensorReady) {
-		vTaskDelete(nullptr);
-	}
-
-	OpticalSensor::MotionData motionData;
 
 	for (;;) {
-		if (opticalSensor.poll(motionData)) {
-			const bool lifted = !motionData.onSurface;
-			mouseDriver.handleOpticalDelta(motionData.deltaX, motionData.deltaY, lifted);
-		}
-
+		mouseDriver.update();
 		vTaskDelay(pdMS_TO_TICKS(5));
 	}
 }
 
 void setup() {
 	Serial.begin(115200);
-	pixel.begin();
+	lightState.begin();
+	lightState.setEffect(lightRainbow);
 
-	// Uses internal pullups for testing without external resistors
+	// Uses internal pullups for button logic without external resistors
     pinMode(LEFT_BUTTON, INPUT_PULLUP);
     pinMode(RIGHT_BUTTON, INPUT_PULLUP);
     pinMode(SCROLLWHEEL_A, INPUT_PULLUP);
@@ -117,16 +104,32 @@ void setup() {
 	// Setup haptic driver
 	Wire.setSDA(SDA);
 	Wire.setSCL(SCL);
-	hapticDriver.begin(&Wire);
-	mouseDriver.begin();
-
-	gOpticalSensorReady = opticalSensor.begin();
-	if (!gOpticalSensorReady) {
-		Serial.println("Optical sensor init failed");
+	Wire.begin();
+	if (!hapticDriver.begin(&Wire)) {
+		Serial.println("Haptic driver init failed");
 	}
 
-	xTaskCreate(vBlinkTask, "BlinkTask", 512, nullptr, 1, &gBlinkTaskHandle);
-	xTaskCreate(vOpticalPollTask, "OpticalPollTask", 1024, nullptr, 1, &gOpticalPollTaskHandle);
+	// Setup imu
+	SPI.setSCK(IMU_SCK);
+	SPI.setTX(IMU_MOSI);
+	SPI.setRX(IMU_MISO);
+	SPI.begin();
+	if (!imu.begin(&SPI, IMU_CS, IMU_INT)) {
+		Serial.println("IMU init failed");
+	}
+
+	if (!opticalSensor.begin()) {
+		Serial.println("Optical sensor init failed");
+	}
+	opticalSensor.setCpi(1600);
+
+	mouseDriver.begin();
+	mouseDriver.setPointerSensitivity(1.0f);
+	mouseDriver.setScrollSensitivity(1.0f);
+	mouseDriver.setZoomSensitivity(1.0f);
+
+	xTaskCreate(vLightTask, "LightTask", 512, nullptr, 1, &gLightTaskHandle);
+	xTaskCreate(vMouseTask, "MouseTask", 1024, nullptr, 1, &gMouseTaskHandle);
 }
 
 void loop() {
