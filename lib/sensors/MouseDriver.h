@@ -64,16 +64,14 @@ private:
     Matrix2f relativeImuRotation = Matrix2f::Identity();
     uint16_t cpi = 1100;
 
-	// Real pointer state in physical millimeters.
-    Vector2d realPointerMm = Vector2d::Zero();
+	// Running difference between real pointer position and proxy (sent) position in mm.
+    Vector2f pointerErrorMm = Vector2f::Zero();
 
 	// Proxy states track what has been sent to the host:
 	// - wheel proxy is in scaled HID steps sent
-	// - pointer proxy is in pixel deltas sent
+	// Pointer reconciliation keeps only running error in mm.
     int32_t proxyScrollSent = 0;
     int32_t proxyZoomSent = 0;
-    int32_t proxyPointerXPixels = 0;
-    int32_t proxyPointerYPixels = 0;
 
 	float pointerSensitivity = 1.0f;
 	float scrollSensitivity = 1.0f;

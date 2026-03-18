@@ -30,10 +30,8 @@ void MouseDriver::begin() {
 	proxyZoomSent = 0;
 
 	// Pointer states start at origin:
-	// real state in mm, proxy state as sent pixel deltas.
-	realPointerMm = Vector2d::Zero();
-	proxyPointerXPixels = 0;
-	proxyPointerYPixels = 0;
+	// start with zero running reconciliation error (real - proxy) in mm.
+	pointerErrorMm = Vector2f::Zero();
 
 	// Reset IMU reference frame state at startup.
 	lifted = true;
@@ -250,31 +248,25 @@ void MouseDriver::handleImu() {
 }
 
 void MouseDriver::updatePointerState(const Vector2f& relativeCountsDelta) {
-	// Real pointer path in highest available precision (mm).
-	const double countsPerMm = cpi / 25.4;
-	realPointerMm += relativeCountsDelta.cast<double>() / countsPerMm;
+	const float countsPerMm = cpi / 25.4f;
 
-	// Proxy reconciliation:
-	// proxy stores sent pixels; unscale to mm, compare against real mm,
-	// then rescale/clamp for this HID report.
-	const float pointerSensitivityF = pointerSensitivity;
-	const float countsPerMmF = countsPerMm;
-	const float proxyXmm = (proxyPointerXPixels / pointerSensitivityF) / countsPerMmF;
-	const float proxyYmm = (proxyPointerYPixels / pointerSensitivityF) / countsPerMmF;
-	const float errorXmm = realPointerMm.x() - proxyXmm;
-	const float errorYmm = realPointerMm.y() - proxyYmm;
+	// Accumulate real movement into running error (real - proxy) in mm.
+	pointerErrorMm += relativeCountsDelta / countsPerMm;
 
-	const float errorXCounts = errorXmm * countsPerMmF;
-	const float errorYCounts = errorYmm * countsPerMmF;
-	const int32_t deltaXHid = static_cast<int32_t>(lroundf(errorXCounts * pointerSensitivityF));
-	const int32_t deltaYHid = static_cast<int32_t>(lroundf(errorYCounts * pointerSensitivityF));
+	// Convert error to HID deltas, clamp, then remove sent motion from error.
+	const float errorXCounts = pointerErrorMm.x() * countsPerMm;
+	const float errorYCounts = pointerErrorMm.y() * countsPerMm;
+	const int32_t deltaXHid = static_cast<int32_t>(lroundf(errorXCounts * pointerSensitivity));
+	const int32_t deltaYHid = static_cast<int32_t>(lroundf(errorYCounts * pointerSensitivity));
 	const int8_t stepX = clampToHid(deltaXHid);
 	const int8_t stepY = clampToHid(deltaYHid);
 
 	cycleMoveX += stepX;
 	cycleMoveY += stepY;
-	proxyPointerXPixels += stepX;
-	proxyPointerYPixels += stepY;
+
+	const float stepToMm = 1.0f / (pointerSensitivity * countsPerMm);
+	pointerErrorMm.x() -= stepX * stepToMm;
+	pointerErrorMm.y() -= stepY * stepToMm;
 }
 
 void MouseDriver::quaternionToZRotMatrix(const Quaternionf& quat, Matrix2f& rotMatrix) const {
