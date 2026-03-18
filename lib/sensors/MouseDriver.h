@@ -13,11 +13,6 @@ using namespace Eigen;
 
 class MouseDriver {
 public:
-    enum class ImuZAxisOrientation {
-        Up,
-        Down
-    };
-
     enum class OpticalRotation {
         Deg0 = 0,
         Deg90 = 90,
@@ -46,7 +41,6 @@ public:
     void setScrollSensitivity(float sensitivity);
     void setZoomSensitivity(float sensitivity);
     void setHeadlessModeEnabled(bool enabled);
-    void setImuZAxisOrientation(ImuZAxisOrientation orientation);
     void setOpticalRotation(OpticalRotation rotation);
     void setScrollClockwisePositive(bool clockwisePositive);
     void setZoomClockwisePositive(bool clockwisePositive);
@@ -59,8 +53,6 @@ private:
     Button& leftButton;
     Button& rightButton;
 	bool lifted = true;
-    Matrix2f lastRotation = Matrix2f::Identity();
-    Matrix2f initialOrient = Matrix2f::Identity();
     Matrix2f relativeImuRotation = Matrix2f::Identity();
     uint16_t cpi = 1100;
 
@@ -77,7 +69,6 @@ private:
 	float scrollSensitivity = 1.0f;
 	float zoomSensitivity = 1.0f;
     bool headlessModeEnabled = true;
-    ImuZAxisOrientation imuZAxisOrientation = ImuZAxisOrientation::Up;
     OpticalRotation opticalRotation = OpticalRotation::Deg0;
     SensorReadings sensorReadings;
     int32_t cycleMoveX = 0;
@@ -85,14 +76,12 @@ private:
     int32_t cycleWheel = 0;
 
 	int8_t clampToHid(int32_t value) const;
-    void updateRelativeImuRotation();
     void applyOpticalRotation(const Vector2f& in, Vector2f& out) const;
     void updatePointerState(const Vector2f& relativeCountsDelta);
     void handleButtons();
     void handleWheels();
     void handleOptical();
     void handleImu();
-    void quaternionToZRotMatrix(const Quaternionf& quat, Matrix2f& rotMatrix) const;
 };
 
 #endif // MOUSE_DRIVER_H

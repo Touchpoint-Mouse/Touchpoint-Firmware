@@ -201,7 +201,7 @@ void setup() {
 	mouseDriver.setPointerSensitivity(0.05f);
 	mouseDriver.setScrollSensitivity(1.0f);
 	mouseDriver.setZoomSensitivity(1.0f);
-	mouseDriver.setImuZAxisOrientation(MouseDriver::ImuZAxisOrientation::Down);
+	imu.setZAxisOrientation(IMU::ZAxisOrientation::Down);
 	mouseDriver.setOpticalRotation(MouseDriver::OpticalRotation::Deg270);
 	mouseDriver.setScrollClockwisePositive(true);
 	mouseDriver.setZoomClockwisePositive(true);

@@ -37,9 +37,8 @@ void MouseDriver::begin() {
 	lifted = true;
 	sensorReadings.lifted = true;
 	sensorReadings.imuValid = false;
-	lastRotation = Matrix2f::Identity();
-	initialOrient = Matrix2f::Identity();
-	updateRelativeImuRotation();
+	relativeImuRotation = Matrix2f::Identity();
+	imu.resetReferenceFrame();
 
 	opticalSensor.setCpi(cpi);
 }
@@ -73,11 +72,6 @@ void MouseDriver::setZoomSensitivity(float sensitivity) {
 
 void MouseDriver::setHeadlessModeEnabled(bool enabled) {
 	headlessModeEnabled = enabled;
-}
-
-void MouseDriver::setImuZAxisOrientation(ImuZAxisOrientation orientation) {
-	imuZAxisOrientation = orientation;
-	updateRelativeImuRotation();
 }
 
 void MouseDriver::setOpticalRotation(OpticalRotation rotation) {
@@ -116,10 +110,6 @@ int8_t MouseDriver::clampToHid(int32_t value) const {
 		return -127;
 	}
 	return static_cast<int8_t>(value);
-}
-
-void MouseDriver::updateRelativeImuRotation() {
-	relativeImuRotation = initialOrient.transpose() * lastRotation;
 }
 
 void MouseDriver::applyOpticalRotation(const Vector2f& in, Vector2f& out) const {
@@ -208,8 +198,7 @@ void MouseDriver::handleOptical() {
 
 	if (wasLifted && !lifted) {
 		// Re-zero IMU-relative frame when touching down again.
-		initialOrient = lastRotation;
-		updateRelativeImuRotation();
+		imu.resetReferenceFrame();
 	}
 
 	if (lifted || !motionData.hasMotion) {
@@ -233,14 +222,12 @@ void MouseDriver::handleOptical() {
 }
 
 void MouseDriver::handleImu() {
-	Quaternionf rotation;
-	if (imu.getRotationVector(rotation)) {
-		quaternionToZRotMatrix(rotation, lastRotation);
-		updateRelativeImuRotation();
-		sensorReadings.imuRotation[0] = rotation.w();
-		sensorReadings.imuRotation[1] = rotation.x();
-		sensorReadings.imuRotation[2] = rotation.y();
-		sensorReadings.imuRotation[3] = rotation.z();
+	Quaternionf rotationVector;
+	if (imu.getRelativeRotationMatrix(relativeImuRotation, &rotationVector)) {
+		sensorReadings.imuRotation[0] = rotationVector.w();
+		sensorReadings.imuRotation[1] = rotationVector.x();
+		sensorReadings.imuRotation[2] = rotationVector.y();
+		sensorReadings.imuRotation[3] = rotationVector.z();
 		sensorReadings.imuValid = true;
 	} else {
 		sensorReadings.imuValid = false;
@@ -267,18 +254,4 @@ void MouseDriver::updatePointerState(const Vector2f& relativeCountsDelta) {
 	const float stepToMm = 1.0f / (pointerSensitivity * countsPerMm);
 	pointerErrorMm.x() -= stepX * stepToMm;
 	pointerErrorMm.y() -= stepY * stepToMm;
-}
-
-void MouseDriver::quaternionToZRotMatrix(const Quaternionf& quat, Matrix2f& rotMatrix) const {
-	// Build a 2D yaw-only rotation matrix from quaternion components.
-	const float qw = quat.w();
-	const float qz = quat.z();
-	const float yawCos = (qw * qw) - (qz * qz);
-	const float yawSign = (imuZAxisOrientation == ImuZAxisOrientation::Up) ? 1.0f : -1.0f;
-	const float yawSin = yawSign * 2.0f * qw * qz;
-
-	rotMatrix(0, 0) = yawCos;
-	rotMatrix(0, 1) = -yawSin;
-	rotMatrix(1, 0) = yawSin;
-	rotMatrix(1, 1) = yawCos;
 }
