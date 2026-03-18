@@ -65,17 +65,8 @@ void MouseDriver::update() {
 
 	handleButtons();
 	handleWheels();
-
-	const uint32_t nowMs = millis();
-	if ((nowMs - lastOpticalPollMs) >= 10) {
-		lastOpticalPollMs = nowMs;
-		handleOptical();
-	}
-
-	if ((nowMs - lastImuPollMs) >= 10) {
-		lastImuPollMs = nowMs;
-		handleImu();
-	}
+	handleOptical();
+	handleImu();
 
 	if (cycleMoveX != 0 || cycleMoveY != 0 || cycleWheel != 0) {
 		Mouse.move(clampToHid(cycleMoveX), clampToHid(cycleMoveY), clampToHid(cycleWheel));

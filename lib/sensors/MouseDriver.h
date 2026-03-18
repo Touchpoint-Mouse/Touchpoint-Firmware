@@ -59,8 +59,6 @@ private:
     bool scrollClockwisePositive = true;
     bool zoomClockwisePositive = true;
     SensorReadings sensorReadings;
-    uint32_t lastOpticalPollMs = 0;
-    uint32_t lastImuPollMs = 0;
     int16_t cycleMoveX = 0;
     int16_t cycleMoveY = 0;
     int16_t cycleWheel = 0;

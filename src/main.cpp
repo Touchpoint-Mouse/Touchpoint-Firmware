@@ -36,9 +36,8 @@
 // Initialize light state machine
 LightState lightState(NEOPIXEL_DIN);
 LightState::OffEffect lightOff;
-LightState::SolidEffect lightSolid(LightState::colorFromPreset(LightState::LightColor::Cyan));
-LightState::RainbowEffect lightRainbow(64, 1.0f, 255, 0);
-LightState::PulseEffect lightPulse(180, 1.5f, {255, 64, 32}, 0.0f);
+LightState::PulseEffect lightInit(180, 5.f, LightState::colorFromPreset(LightState::LightColor::Red), 0.0f);
+LightState::PulseEffect lightIdle(180, 0.5f, LightState::colorFromPreset(LightState::LightColor::Green), 0.0f);
 
 // Initialize buttons and rotary encoder
 Button leftButton(3, PullMode::PULLUP); // Left mouse button with debounce of 3ms
@@ -135,15 +134,16 @@ void vDebugTask(void* pvParameters) {
 }
 
 void setup() {
+	lightState.begin();
+	lightState.setEffect(lightInit);
+	xTaskCreate(vLightTask, "LightTask", 512, nullptr, 1, &gLightTaskHandle);
+
 	Serial.begin(115200);
 	/*while (!Serial) {
 		; // Wait for serial port to connect. Needed for native USB
 	}*/
 	delay(1000);
 	Serial.println("Starting Touchpoint Mouse Firmware");
-
-	lightState.begin();
-	lightState.setEffect(lightRainbow);
 
 	// Uses internal pullups for button logic without external resistors
     pinMode(LEFT_BUTTON, INPUT_PULLUP);
@@ -204,10 +204,10 @@ void setup() {
 	mouseDriver.setScrollClockwisePositive(true);
 	mouseDriver.setZoomClockwisePositive(true);
 
-	xTaskCreate(vLightTask, "LightTask", 512, nullptr, 1, &gLightTaskHandle);
 	xTaskCreate(vMouseTask, "MouseTask", 1024, nullptr, 2, &gMouseTaskHandle);
 	// xTaskCreate(vDebugTask, "DebugTask", 1024, nullptr, 1, &gDebugTaskHandle);
 	// Serial.println("Setup complete");
+	lightState.setEffect(lightIdle);
 }
 
 void loop() {
