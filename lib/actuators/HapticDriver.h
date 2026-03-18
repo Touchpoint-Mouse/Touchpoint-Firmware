@@ -15,11 +15,25 @@ class HapticDriver {
         HapticDriver();
         bool begin(TwoWire* wire=&Wire);
         void setEffect(uint8_t effect);
+        bool playEffect(uint8_t effect);
+        bool queueEffect(uint8_t effect);
+        void clearQueue();
+        uint8_t queuedEffectCount() const;
+        bool playQueuedEffects();
+
+        void enableRealtimeMode();
+        void disableRealtimeMode();
+        void setRealtimeValue(uint8_t value);
         void stop();
         bool isPlaying();
 
     private:
         Adafruit_DRV2605 drv;
+        static constexpr uint8_t MAX_WAVEFORM_SLOTS = 8;
+        uint8_t queuedEffects[MAX_WAVEFORM_SLOTS];
+        uint8_t queueCount;
+
+        void applyQueuedWaveforms();
 };
 
 #endif // HAPTIC_DRIVER_H
