@@ -46,7 +46,23 @@ void MouseDriver::setZoomSensitivity(float sensitivity) {
 	}
 }
 
+void MouseDriver::setOpticalRotation(OpticalRotation rotation) {
+	opticalRotation = rotation;
+}
+
+void MouseDriver::setScrollClockwisePositive(bool clockwisePositive) {
+	scrollClockwisePositive = clockwisePositive;
+}
+
+void MouseDriver::setZoomClockwisePositive(bool clockwisePositive) {
+	zoomClockwisePositive = clockwisePositive;
+}
+
 void MouseDriver::update() {
+	cycleMoveX = 0;
+	cycleMoveY = 0;
+	cycleWheel = 0;
+
 	handleButtons();
 	handleWheels();
 
@@ -59,6 +75,10 @@ void MouseDriver::update() {
 	if ((nowMs - lastImuPollMs) >= 10) {
 		lastImuPollMs = nowMs;
 		handleImu();
+	}
+
+	if (cycleMoveX != 0 || cycleMoveY != 0 || cycleWheel != 0) {
+		Mouse.move(clampToHid(cycleMoveX), clampToHid(cycleMoveY), clampToHid(cycleWheel));
 	}
 }
 
@@ -81,6 +101,28 @@ int16_t MouseDriver::applySensitivity(int16_t value, float sensitivity) const {
 		return -32768;
 	}
 	return static_cast<int16_t>(lroundf(scaled));
+}
+
+void MouseDriver::applyOpticalRotation(int16_t inX, int16_t inY, int16_t& outX, int16_t& outY) const {
+	switch (opticalRotation) {
+		case OpticalRotation::Deg90:
+			outX = inY;
+			outY = static_cast<int16_t>(-inX);
+			break;
+		case OpticalRotation::Deg180:
+			outX = static_cast<int16_t>(-inX);
+			outY = static_cast<int16_t>(-inY);
+			break;
+		case OpticalRotation::Deg270:
+			outX = static_cast<int16_t>(-inY);
+			outY = inX;
+			break;
+		case OpticalRotation::Deg0:
+		default:
+			outX = inX;
+			outY = inY;
+			break;
+	}
 }
 
 void MouseDriver::handleButtons() {
@@ -109,22 +151,28 @@ void MouseDriver::handleWheels() {
 	const int scrollSteps = scrollWheel.cw_steps();
 	const int zoomSteps = zoomWheel.cw_steps();
 
-	int scrollDelta = scrollSteps - prevScrollSteps;
-	int zoomDelta = zoomSteps - prevZoomSteps;
 	sensorReadings.scrollSteps = scrollSteps;
 	sensorReadings.zoomSteps = zoomSteps;
 
 	prevScrollSteps = scrollSteps;
 	prevZoomSteps = zoomSteps;
 
-	if (scrollDelta != 0) {
-		const int16_t scaledScroll = applySensitivity(static_cast<int16_t>(scrollDelta), scrollSensitivity);
-		Mouse.move(0, 0, clampToHid(scaledScroll));
+	if (scrollWheel.hasMoved()) {
+		int16_t scrollStep = scrollWheel.dir() ? 1 : -1;
+		if (!scrollClockwisePositive) {
+			scrollStep = static_cast<int16_t>(-scrollStep);
+		}
+		const int16_t scaledScroll = applySensitivity(scrollStep, scrollSensitivity);
+		cycleWheel += scaledScroll;
 	}
 
-	if (zoomDelta != 0) {
-		const int16_t scaledZoom = applySensitivity(static_cast<int16_t>(zoomDelta), zoomSensitivity);
-		(void)scaledZoom;
+	if (zoomWheel.hasMoved()) {
+		int16_t zoomStep = zoomWheel.dir() ? 1 : -1;
+		if (!zoomClockwisePositive) {
+			zoomStep = static_cast<int16_t>(-zoomStep);
+		}
+		const int16_t scaledZoom = applySensitivity(zoomStep, zoomSensitivity);
+		cycleMoveX += scaledZoom;
 	}
 }
 
@@ -150,7 +198,11 @@ void MouseDriver::handleOptical() {
 
 	const int16_t scaledX = applySensitivity(motionData.deltaX, pointerSensitivity);
 	const int16_t scaledY = applySensitivity(motionData.deltaY, pointerSensitivity);
-	Mouse.move(clampToHid(scaledX), clampToHid(scaledY), 0);
+	int16_t rotatedX = 0;
+	int16_t rotatedY = 0;
+	applyOpticalRotation(scaledX, scaledY, rotatedX, rotatedY);
+	cycleMoveX += rotatedX;
+	cycleMoveY += rotatedY;
 }
 
 void MouseDriver::handleImu() {

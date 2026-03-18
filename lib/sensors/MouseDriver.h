@@ -11,6 +11,13 @@
 
 class MouseDriver {
 public:
+    enum class OpticalRotation {
+        Deg0 = 0,
+        Deg90 = 90,
+        Deg180 = 180,
+        Deg270 = 270
+    };
+
     struct SensorReadings {
         OpticalSensor::MotionData optical;
         bool opticalValid = false;
@@ -30,6 +37,9 @@ public:
     void setPointerSensitivity(float sensitivity);
     void setScrollSensitivity(float sensitivity);
     void setZoomSensitivity(float sensitivity);
+    void setOpticalRotation(OpticalRotation rotation);
+    void setScrollClockwisePositive(bool clockwisePositive);
+    void setZoomClockwisePositive(bool clockwisePositive);
 
 private:
     OpticalSensor& opticalSensor;
@@ -45,12 +55,19 @@ private:
 	float pointerSensitivity = 1.0f;
 	float scrollSensitivity = 1.0f;
 	float zoomSensitivity = 1.0f;
+    OpticalRotation opticalRotation = OpticalRotation::Deg0;
+    bool scrollClockwisePositive = true;
+    bool zoomClockwisePositive = true;
     SensorReadings sensorReadings;
     uint32_t lastOpticalPollMs = 0;
     uint32_t lastImuPollMs = 0;
+    int16_t cycleMoveX = 0;
+    int16_t cycleMoveY = 0;
+    int16_t cycleWheel = 0;
 
 	int8_t clampToHid(int16_t value) const;
     int16_t applySensitivity(int16_t value, float sensitivity) const;
+    void applyOpticalRotation(int16_t inX, int16_t inY, int16_t& outX, int16_t& outY) const;
     void handleButtons();
     void handleWheels();
     void handleOptical();

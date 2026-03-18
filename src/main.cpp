@@ -12,7 +12,7 @@
 #include <Adafruit_BNO08x.h>
 //#include <SongbirdCore.h>
 //#include <SongbirdUART.h>
-#include "../integration/mouse_emulator_test.hpp" // Testing file to run
+#include "../integration/user_inputs_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 #ifndef INTEGRATION_TESTING
@@ -197,9 +197,12 @@ void setup() {
 	
 
 	mouseDriver.begin();
-	mouseDriver.setPointerSensitivity(1.0f);
+	mouseDriver.setPointerSensitivity(0.05f);
 	mouseDriver.setScrollSensitivity(1.0f);
 	mouseDriver.setZoomSensitivity(1.0f);
+	mouseDriver.setOpticalRotation(MouseDriver::OpticalRotation::Deg270);
+	mouseDriver.setScrollClockwisePositive(true);
+	mouseDriver.setZoomClockwisePositive(true);
 
 	xTaskCreate(vLightTask, "LightTask", 512, nullptr, 1, &gLightTaskHandle);
 	xTaskCreate(vMouseTask, "MouseTask", 1024, nullptr, 2, &gMouseTaskHandle);
