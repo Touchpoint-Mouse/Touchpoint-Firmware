@@ -7,37 +7,30 @@
 #include <avr/pgmspace.h>
 #endif
 
-// Constructor stores pin assignments and default PMW3389 SPI timing.
-
-OpticalSensor::OpticalSensor(
-	SPIClassRP2040& spi,
-	uint8_t csPin,
-	uint8_t intPin,
-	uint8_t sckPin,
-	uint8_t misoPin,
-	uint8_t mosiPin
-) :
-	spi_(&spi),
-	csPin_(csPin),
-	intPin_(intPin),
-	sckPin_(sckPin),
-	misoPin_(misoPin),
-	mosiPin_(mosiPin),
+OpticalSensor::OpticalSensor() :
+	spi(nullptr),
+	csPin_(255),
+	intPin_(255),
 	initialized_(false),
 	burstReady_(false),
 	cpi_(1100),
-	spiSettings_(2000000, MSBFIRST, SPI_MODE3) {}
+	spiSettings(2000000, MSBFIRST, SPI_MODE3) {}
 
-bool OpticalSensor::begin() {
-	// Configure GPIO and route the selected pins onto the SPI peripheral.
+bool OpticalSensor::begin(SPIClass* spiPort, uint8_t csPin, uint8_t intPin) {
+	if (spiPort == nullptr) {
+		return false;
+	}
+
+	spi = spiPort;
+	csPin_ = csPin;
+	intPin_ = intPin;
+
+	// Configure GPIO and initialize the selected SPI peripheral.
 	pinMode(csPin_, OUTPUT);
 	digitalWrite(csPin_, HIGH);
 	pinMode(intPin_, INPUT_PULLUP);
 
-	spi_->setSCK(sckPin_);
-	spi_->setTX(mosiPin_);
-	spi_->setRX(misoPin_);
-	spi_->begin();
+	spi->begin();
 
 	performStartup();
 
@@ -57,16 +50,16 @@ bool OpticalSensor::poll(MotionData& outData) {
 	uint8_t burstData[BURST_SIZE] = {0};
 
 	select();
-	spi_->beginTransaction(spiSettings_);
-	spi_->transfer(PMW3389::Motion_Burst);
+	spi->beginTransaction(spiSettings);
+	spi->transfer(PMW3389::Motion_Burst);
 	delayMicroseconds(35);
 
 	for (uint8_t i = 0; i < BURST_SIZE; i++) {
-		burstData[i] = spi_->transfer(0);
+		burstData[i] = spi->transfer(0);
 	}
 
 	delayMicroseconds(1);
-	spi_->endTransaction();
+	spi->endTransaction();
 	deselect();
 
 	// Decode burst packet fields.
@@ -124,12 +117,12 @@ void OpticalSensor::deselect() {
 uint8_t OpticalSensor::readReg(uint8_t regAddr) {
 	// Single-register read transaction with PMW3389 timing delays.
 	select();
-	spi_->beginTransaction(spiSettings_);
-	spi_->transfer(regAddr & 0x7F);
+	spi->beginTransaction(spiSettings);
+	spi->transfer(regAddr & 0x7F);
 	delayMicroseconds(35);
-	uint8_t data = spi_->transfer(0);
+	uint8_t data = spi->transfer(0);
 	delayMicroseconds(1);
-	spi_->endTransaction();
+	spi->endTransaction();
 	deselect();
 	delayMicroseconds(19);
 	return data;
@@ -138,11 +131,11 @@ uint8_t OpticalSensor::readReg(uint8_t regAddr) {
 void OpticalSensor::writeReg(uint8_t regAddr, uint8_t value) {
 	// Single-register write transaction with PMW3389 timing delays.
 	select();
-	spi_->beginTransaction(spiSettings_);
-	spi_->transfer(regAddr | 0x80);
-	spi_->transfer(value);
+	spi->beginTransaction(spiSettings);
+	spi->transfer(regAddr | 0x80);
+	spi->transfer(value);
 	delayMicroseconds(20);
-	spi_->endTransaction();
+	spi->endTransaction();
 	deselect();
 	delayMicroseconds(100);
 }
@@ -155,17 +148,17 @@ void OpticalSensor::uploadFirmware() {
 	writeReg(PMW3389::SROM_Enable, 0x18);
 
 	select();
-	spi_->beginTransaction(spiSettings_);
-	spi_->transfer(PMW3389::SROM_Load_Burst | 0x80);
+	spi->beginTransaction(spiSettings);
+	spi->transfer(PMW3389::SROM_Load_Burst | 0x80);
 	delayMicroseconds(15);
 
 	for (int i = 0; i < firmware_length; i++) {
 		uint8_t value = static_cast<uint8_t>(pgm_read_byte(firmware_data + i));
-		spi_->transfer(value);
+		spi->transfer(value);
 		delayMicroseconds(15);
 	}
 
-	spi_->endTransaction();
+	spi->endTransaction();
 	deselect();
 
 	// Verify SROM load and apply baseline run configuration.

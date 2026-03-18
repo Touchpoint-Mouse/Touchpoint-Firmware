@@ -11,9 +11,22 @@
 
 class MouseDriver {
 public:
+    struct SensorReadings {
+        OpticalSensor::MotionData optical;
+        bool opticalValid = false;
+        Eigen::Vector4f imuRotation = Eigen::Vector4f::Zero();
+        bool imuValid = false;
+        int scrollSteps = 0;
+        int zoomSteps = 0;
+        bool leftPressed = false;
+        bool rightPressed = false;
+        bool lifted = true;
+    };
+
     MouseDriver(OpticalSensor& opticalSensor, IMU& imu, RotEncoder& scrollWheel, RotEncoder& zoomWheel, Button& leftButton, Button& rightButton);
 	void begin();
     void update();
+    SensorReadings getSensorReadings() const;
     void setPointerSensitivity(float sensitivity);
     void setScrollSensitivity(float sensitivity);
     void setZoomSensitivity(float sensitivity);
@@ -32,6 +45,9 @@ private:
 	float pointerSensitivity = 1.0f;
 	float scrollSensitivity = 1.0f;
 	float zoomSensitivity = 1.0f;
+    SensorReadings sensorReadings;
+    uint32_t lastOpticalPollMs = 0;
+    uint32_t lastImuPollMs = 0;
 
 	int8_t clampToHid(int16_t value) const;
     int16_t applySensitivity(int16_t value, float sensitivity) const;

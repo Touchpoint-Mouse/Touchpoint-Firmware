@@ -9,7 +9,7 @@ HapticDriver::HapticDriver() {
     // Constructor can be used for initialization if needed
 }
 
-bool HapticDriver::begin(TwoWire* wire=&Wire) {
+bool HapticDriver::begin(TwoWire* wire) {
     // Initialize the haptic driver hardware
     // Initialize I2C with pins from config
     if (!drv.begin(wire)) {

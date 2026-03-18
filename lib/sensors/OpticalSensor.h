@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include <SPI.h>
-#include "V0_2_Config.h"
 
 // PMW3389 register map used by the driver implementation.
 namespace PMW3389 {
@@ -74,17 +73,10 @@ public:
     bool onSurface = false;
   };
 
-  OpticalSensor(
-    SPIClassRP2040& spi = SPI,
-    uint8_t csPin = OPTICAL_CS,
-    uint8_t intPin = OPTICAL_INT,
-    uint8_t sckPin = OPTICAL_SCK,
-    uint8_t misoPin = OPTICAL_MISO,
-    uint8_t mosiPin = OPTICAL_MOSI
-  );
+  OpticalSensor();
 
   // Configures SPI pins, initializes sensor, and uploads SROM firmware.
-  bool begin();
+  bool begin(SPIClass* spi, uint8_t csPin, uint8_t intPin);
 
   // Polls motion burst registers and fills outData with decoded values.
   // Returns false when the sensor is not initialized.
@@ -101,16 +93,13 @@ public:
 private:
   static constexpr uint8_t BURST_SIZE = 12;
 
-  SPIClassRP2040* spi_;
+  SPIClass* spi;
   uint8_t csPin_;
   uint8_t intPin_;
-  uint8_t sckPin_;
-  uint8_t misoPin_;
-  uint8_t mosiPin_;
   bool initialized_;
   bool burstReady_;
   uint16_t cpi_;
-  SPISettings spiSettings_;
+  SPISettings spiSettings;
 
   void select();
   void deselect();
