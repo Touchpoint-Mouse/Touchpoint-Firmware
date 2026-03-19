@@ -81,6 +81,8 @@ void vMouseTask(void* pvParameters) {
 		mouseDriver.update();
 		if (leftButton.changeTo(HIGH)) {
 			hapticDriver.playEffect(24); // Play a click effect
+		} else if (leftButton.changeTo(LOW)) {
+			hapticDriver.playEffect(25); // Stop effect on release
 		}
 		vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(1));
 	}
@@ -196,18 +198,18 @@ void setup() {
 		}
 	}
 
-	
-
-	mouseDriver.begin();
 	mouseDriver.setCPI(1100);
 	mouseDriver.setHeadlessModeEnabled(true);
-	mouseDriver.setPointerSensitivity(0.05f);
+	mouseDriver.setPointerOffset(Vector2f(-29.676f, -45.375f));
+	mouseDriver.setPointerSensitivity(2.0f);
 	mouseDriver.setScrollSensitivity(1.0f);
 	mouseDriver.setZoomSensitivity(1.0f);
 	imu.setZAxisOrientation(IMU::ZAxisOrientation::Down);
 	mouseDriver.setOpticalRotation(MouseDriver::OpticalRotation::Deg270);
 	mouseDriver.setScrollClockwisePositive(true);
 	mouseDriver.setZoomClockwisePositive(true);
+
+	mouseDriver.begin();
 
 	xTaskCreate(vMouseTask, "MouseTask", 1024, nullptr, 2, &gMouseTaskHandle);
 	// xTaskCreate(vDebugTask, "DebugTask", 1024, nullptr, 1, &gDebugTaskHandle);

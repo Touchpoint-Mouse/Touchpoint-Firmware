@@ -23,12 +23,14 @@ public:
     struct SensorReadings {
         OpticalSensor::MotionData optical;
         bool opticalValid = false;
+        bool hasMotion = false;
         Vector4f imuRotation = Vector4f::Zero();
         bool imuValid = false;
         int32_t scrollSteps = 0;
         int32_t zoomSteps = 0;
         bool leftPressed = false;
         bool rightPressed = false;
+        bool wasLifted = false;
         bool lifted = true;
     };
 
@@ -38,6 +40,7 @@ public:
     SensorReadings getSensorReadings() const;
     bool setCPI(uint16_t cpi);
     void setPointerSensitivity(float sensitivity);
+    void setPointerOffset(Vector2f offset);
     void setScrollSensitivity(float sensitivity);
     void setZoomSensitivity(float sensitivity);
     void setHeadlessModeEnabled(bool enabled);
@@ -52,12 +55,16 @@ private:
     RotEncoder& zoomWheel;
     Button& leftButton;
     Button& rightButton;
-	bool lifted = true;
-    Matrix2f relativeImuRotation = Matrix2f::Identity();
+    Matrix2f prevRelativeImuRotation = Matrix2f::Identity();
+	Matrix2f relativeImuRotation = Matrix2f::Identity();
+    Vector2f pointerOffset = Vector2f::Zero();
     uint16_t cpi = 1100;
 
 	// Running difference between real pointer position and proxy (sent) position in mm.
     Vector2f pointerErrorMm = Vector2f::Zero();
+    Vector2f pointerOffsetRealMm = Vector2f::Zero();
+    Vector2f pointerOffsetProxyMm = Vector2f::Zero();
+    bool hasPointerOffsetProxy = false;
 
 	// Proxy states track what has been sent to the host:
 	// - wheel proxy is in scaled HID steps sent
@@ -77,7 +84,7 @@ private:
 
 	int8_t clampToHid(int32_t value) const;
     void applyOpticalRotation(const Vector2f& in, Vector2f& out) const;
-    void updatePointerState(const Vector2f& relativeCountsDelta);
+    void updatePointerState();
     void handleButtons();
     void handleWheels();
     void handleOptical();

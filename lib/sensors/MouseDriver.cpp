@@ -29,14 +29,17 @@ void MouseDriver::begin() {
 	proxyScrollSent = 0;
 	proxyZoomSent = 0;
 
-	// Pointer states start at origin:
+	// Pointer state starts at pointer offset
 	// start with zero running reconciliation error (real - proxy) in mm.
 	pointerErrorMm = Vector2f::Zero();
+	pointerOffsetRealMm = Vector2f::Zero();
+	pointerOffsetProxyMm = Vector2f::Zero();
+	hasPointerOffsetProxy = false;
 
 	// Reset IMU reference frame state at startup.
-	lifted = true;
 	sensorReadings.lifted = true;
 	sensorReadings.imuValid = false;
+	prevRelativeImuRotation = Matrix2f::Identity();
 	relativeImuRotation = Matrix2f::Identity();
 	imu.resetReferenceFrame();
 
@@ -56,6 +59,13 @@ void MouseDriver::setPointerSensitivity(float sensitivity) {
 	if (sensitivity > 0.0f) {
 		pointerSensitivity = sensitivity;
 	}
+}
+
+void MouseDriver::setPointerOffset(Vector2f offset) {
+	pointerOffset = offset;
+	pointerOffsetRealMm = relativeImuRotation * pointerOffset;
+	pointerOffsetProxyMm = pointerOffsetRealMm;
+	hasPointerOffsetProxy = true;
 }
 
 void MouseDriver::setScrollSensitivity(float sensitivity) {
@@ -96,6 +106,7 @@ void MouseDriver::update() {
 	handleWheels();
 	handleImu();
 	handleOptical();
+	updatePointerState();
 
 	if (cycleMoveX != 0 || cycleMoveY != 0 || cycleWheel != 0) {
 		Mouse.move(clampToHid(cycleMoveX), clampToHid(cycleMoveY), clampToHid(cycleWheel));
@@ -182,48 +193,14 @@ void MouseDriver::handleWheels() {
 	proxyZoomSent += zoomStepHid;
 }
 
-void MouseDriver::handleOptical() {
-	OpticalSensor::MotionData motionData;
-	if (!opticalSensor.poll(motionData)) {
-		sensorReadings.opticalValid = false;
-		return;
-	}
-
-	sensorReadings.optical = motionData;
-	sensorReadings.opticalValid = true;
-
-	const bool wasLifted = lifted;
-	lifted = !motionData.onSurface;
-	sensorReadings.lifted = lifted;
-
-	if (wasLifted && !lifted) {
-		// Re-zero IMU-relative frame when touching down again.
-		imu.resetReferenceFrame();
-	}
-
-	if (lifted || !motionData.hasMotion) {
-		return;
-	}
-
-	if (motionData.deltaX == 0 && motionData.deltaY == 0) {
-		return;
-	}
-
-	// Keep optical data in configured sensor frame first.
-	const Vector2f sensorDelta(motionData.deltaX, motionData.deltaY);
-    Vector2f configuredSensorDelta;
-    applyOpticalRotation(sensorDelta, configuredSensorDelta);
-
-	// Optionally transform sensor delta into IMU-relative frame before pointer adjustment.
-	const Vector2f pointerCountsDelta = headlessModeEnabled
-		? (relativeImuRotation * configuredSensorDelta)
-		: configuredSensorDelta;
-	updatePointerState(pointerCountsDelta);
-}
-
 void MouseDriver::handleImu() {
+	if (!imu.update()) {
+		sensorReadings.imuValid = false;
+		return;
+	}
+
 	Quaternionf rotationVector;
-	if (imu.getRelativeRotationMatrix(relativeImuRotation, &rotationVector)) {
+	if (imu.getPrevZRotation(prevRelativeImuRotation) && imu.getZRotation(relativeImuRotation) && imu.getOrient(rotationVector)) {
 		sensorReadings.imuRotation[0] = rotationVector.w();
 		sensorReadings.imuRotation[1] = rotationVector.x();
 		sensorReadings.imuRotation[2] = rotationVector.y();
@@ -234,24 +211,90 @@ void MouseDriver::handleImu() {
 	}
 }
 
-void MouseDriver::updatePointerState(const Vector2f& relativeCountsDelta) {
-	const float countsPerMm = cpi / 25.4f;
+void MouseDriver::handleOptical() {
+	OpticalSensor::MotionData motionData;
+	if (!opticalSensor.poll(motionData)) {
+		sensorReadings.opticalValid = false;
+		sensorReadings.hasMotion = false;
+		return;
+	}
 
-	// Accumulate real movement into running error (real - proxy) in mm.
-	pointerErrorMm += relativeCountsDelta / countsPerMm;
+	sensorReadings.optical = motionData;
+	sensorReadings.opticalValid = true;
+	sensorReadings.hasMotion = motionData.hasMotion;
+
+	sensorReadings.wasLifted = sensorReadings.lifted;
+	sensorReadings.lifted = !motionData.onSurface;
+}
+
+void MouseDriver::updatePointerState() {
+	bool resetReferenceThisFrame = false;
+	if (sensorReadings.wasLifted && !sensorReadings.lifted) {
+		// Re-zero IMU-relative frame when touching down again.
+		imu.resetReferenceFrame();
+		prevRelativeImuRotation = Matrix2f::Identity();
+		relativeImuRotation = Matrix2f::Identity();
+		hasPointerOffsetProxy = false;
+		resetReferenceThisFrame = true;
+	}
+
+    // Nothing to do if lifted
+	if (sensorReadings.lifted) {
+		return;
+	}
+
+    const float countsPerMm = cpi / 25.4f;
+
+    // Add optical pointer delta if valid
+    if (sensorReadings.opticalValid && sensorReadings.optical.hasMotion) {
+        // Keep optical data in configured sensor frame first.
+        const Vector2f sensorDelta(sensorReadings.optical.deltaX, sensorReadings.optical.deltaY);
+
+        // Apply optical rotation to raw sensor delta to get configured sensor frame delta.
+        Vector2f configuredSensorDelta;
+        applyOpticalRotation(sensorDelta, configuredSensorDelta);
+        // Apply pointer offset in IMU reference frame in headless mode
+        const Vector2f pointerCountsDelta = headlessModeEnabled
+            ? (relativeImuRotation * configuredSensorDelta)
+            : configuredSensorDelta;
+
+        // Accumulate real movement into running error (real - proxy) in mm.
+        pointerErrorMm += pointerCountsDelta / countsPerMm;
+    }
+
+	// Offset channel: absolute target tracking using real/proxy vectors.
+	if (sensorReadings.imuValid && headlessModeEnabled) {
+		pointerOffsetRealMm = relativeImuRotation * pointerOffset;
+
+		if (resetReferenceThisFrame || !hasPointerOffsetProxy) {
+			pointerOffsetProxyMm = pointerOffsetRealMm;
+			hasPointerOffsetProxy = true;
+		} else {
+			const Vector2f offsetErrorMm = pointerOffsetRealMm - pointerOffsetProxyMm;
+			const int32_t offsetDeltaXHid = static_cast<int32_t>(lroundf(offsetErrorMm.x() * countsPerMm));
+			const int32_t offsetDeltaYHid = static_cast<int32_t>(lroundf(offsetErrorMm.y() * countsPerMm));
+			const int8_t offsetStepX = clampToHid(offsetDeltaXHid);
+			const int8_t offsetStepY = clampToHid(offsetDeltaYHid);
+
+			cycleMoveX += offsetStepX;
+			cycleMoveY += offsetStepY;
+
+			const float offsetStepToMm = 1.0f / countsPerMm;
+			pointerOffsetProxyMm.x() += offsetStepX * offsetStepToMm;
+			pointerOffsetProxyMm.y() += offsetStepY * offsetStepToMm;
+		}
+	}
 
 	// Convert error to HID deltas, clamp, then remove sent motion from error.
-	const float errorXCounts = pointerErrorMm.x() * countsPerMm;
-	const float errorYCounts = pointerErrorMm.y() * countsPerMm;
-	const int32_t deltaXHid = static_cast<int32_t>(lroundf(errorXCounts * pointerSensitivity));
-	const int32_t deltaYHid = static_cast<int32_t>(lroundf(errorYCounts * pointerSensitivity));
+	const int32_t deltaXHid = static_cast<int32_t>(lroundf(pointerErrorMm.x() * pointerSensitivity));
+	const int32_t deltaYHid = static_cast<int32_t>(lroundf(pointerErrorMm.y() * pointerSensitivity));
 	const int8_t stepX = clampToHid(deltaXHid);
 	const int8_t stepY = clampToHid(deltaYHid);
 
 	cycleMoveX += stepX;
 	cycleMoveY += stepY;
 
-	const float stepToMm = 1.0f / (pointerSensitivity * countsPerMm);
+	const float stepToMm = 1.0f / pointerSensitivity;
 	pointerErrorMm.x() -= stepX * stepToMm;
 	pointerErrorMm.y() -= stepY * stepToMm;
 }
