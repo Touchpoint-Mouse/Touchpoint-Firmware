@@ -35,7 +35,7 @@
 #include "IMU.h"
 #include "LightState.h"
 
-#define SERIAL_BAUD 115200
+#define SERIAL_BAUD 460800
 
 // Initialize Songbird core for CDC UART
 // Serial node object
@@ -52,32 +52,19 @@ enum ElevationVibrationHeaders {
 };
 
 // Elevation paramaters
-const float maxElevation = 3.75f; // in radians
 float lastElevation = 0.f;
 float elevationTarget = 0.f;
 float maxElevationSpeed = 0.f; // units per second (0 = no smoothing)
 uint64_t lastElevationTime = 0;
 
+// Vibration parameters
+uint8_t currVibPriority = 0;
+
 // RTOS Task Handles
 TaskHandle_t mouseTaskHandle = NULL;
-TaskHandle_t lightTaskHandle = NULL;
+TaskHandle_t updateTaskHandle = NULL;
 TaskHandle_t servoTaskHandle = NULL;
 TaskHandle_t debugTaskHandle = NULL;
-
-// RTOS queue for vibration commands
-typedef struct {
-	float amplitude;
-	float frequency;
-	uint64_t endTime;
-	bool indefinite;
-} VibrationCommand;
-
-QueueHandle_t vibrationQueue;
-
-// Vibration parameters
-VibrationCommand currVib = {0.f, 0.f, 0, false};
-VibrationCommand nextVib = {0.f, 0.f, 0, false};
-bool hasNext = false;
 
 // Connection state
 volatile bool connectedToDesktop = false;
@@ -87,6 +74,7 @@ LightState lightState(NEOPIXEL_DIN);
 LightState::OffEffect lightOff;
 LightState::PulseEffect lightInit(180, 5.f, LightState::colorFromPreset(LightState::LightColor::Red), 0.0f);
 LightState::PulseEffect lightIdle(180, 0.5f, LightState::colorFromPreset(LightState::LightColor::Green), 0.0f);
+LightState::PulseEffect lightConnected(180, 0.5f, LightState::colorFromPreset(LightState::LightColor::Blue), 0.0f);
 
 // Initialize buttons and rotary encoder
 Button leftButton(3, PullMode::PULLUP); // Left mouse button with debounce of 3ms
@@ -117,6 +105,8 @@ void pingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 
 	// Mark as connected
 	connectedToDesktop = true;
+	// Set light effect to connected
+	lightState.setEffect(lightConnected);
 }
 
 // Elevation feedback handler
@@ -141,32 +131,42 @@ void elevationSmoothingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 
 // Vibration feedback handler
 void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
-	// Read amplitude from packet (unit is mm displacement)
-	float amplitude = pkt->readFloat();
-	// Read frequency from packet (unit is Hz)
-	float frequency = pkt->readFloat();
-	// Read duration from packet (unit is num cycles)
-	uint16_t numCycles = pkt->readInt16();
-	
-	// Calculate endTime and indefinite flag
-	uint64_t currentTime = micros();
-	uint64_t endTime = 0;
-	bool indefinite = false;
-	
-	if (frequency <= 0.f || numCycles == 0) {
-		// Indefinite duration
-		indefinite = true;
-		endTime = 0;
+	// Get priority from packet
+	uint8_t priority = pkt->readByte();
+
+	// If priority is zero use realtime values
+	if (priority == 0) {
+		// Read realtime amplitude from packet
+		uint8_t amplitude = pkt->readByte();
+		hapticDriver.enableRealtimeMode();
+		hapticDriver.setRealtimeValue(amplitude);
+
+		// Reset vibration priority
+		currVibPriority = 0;
+		return;
 	} else {
-		// Calculate end time based on number of cycles
-		uint64_t duration = (uint64_t) (numCycles / frequency * 1000000); // convert to microseconds
-		endTime = currentTime + duration;
-		indefinite = false;
+		// Otherwise, disable realtime mode to play queued effects
+		hapticDriver.disableRealtimeMode();
 	}
-	
-	// Adds vibration command to queue
-	VibrationCommand cmd = {amplitude, frequency, endTime, indefinite};
-	xQueueSend(vibrationQueue, &cmd, 0);
+
+	// If priority is greater than current priority, stop all vibrations
+	if (priority > currVibPriority) {
+		hapticDriver.stop();
+		hapticDriver.clearQueue();
+		currVibPriority = priority;
+	} else if (priority < currVibPriority) {
+		// Ignore this command if it's lower priority than current vibration
+		return;
+	}
+
+	// While there are vibration commands left in the packet
+	while (pkt->getRemainingBytes() > 0) {
+		// Get effect id
+		uint8_t effectId = pkt->readByte();
+
+		// Queue the effect
+		hapticDriver.queueEffect(effectId);
+	}
 }
 
 float getSmoothedElevation() {
@@ -199,40 +199,36 @@ float getSmoothedElevation() {
 	return lastElevation;
 }
 
-void goToNextVibration() {
-	// Move to next vibration command if available
-	if (hasNext) {
-		currVib = nextVib;
-		hasNext = false;
-	} else {
-		// No more commands, stop vibration
-		currVib.amplitude = 0.f;
-		currVib.frequency = 0.f;
-		currVib.endTime = 0;
-		currVib.indefinite = false;
-	}
-}
-
 uint8_t servoLookup(float elevation) {
 	// Simple linear mapping for demo purposes (0 to maxElevation maps to 0 to 180 degrees)
-	return (uint8_t) map(elevation * 1000, 0, maxElevation * 1000, 0, 180);
+	return (uint8_t) map(elevation, 0, 1, 0, 180);
 }
 
 // Servo task - runs motor control loop at high frequency
 void vServoTask(void* pvParameters) {
   while (true) {
-	uart.updateData();
 	// Calculate target position with elevation and vibration
 	elevationServo.writeDegrees(servoLookup(getSmoothedElevation()));
     vTaskDelay(pdMS_TO_TICKS(5));  // Run at 200 Hz
   }
 }
 
-void vLightTask(void* pvParameters) {
+void vUpdateTask(void* pvParameters) {
 	(void)pvParameters;
 
 	for (;;) {
+		uart.updateData();
 		lightState.update();
+		
+		if (connectedToDesktop) {
+			// Plays vibration effects
+			if (!hapticDriver.playQueuedEffects()) {
+				// Resets vibration priority if no effects are playing
+				if (!hapticDriver.isPlaying()) {
+					currVibPriority = 0;
+				}
+			}
+		}
 		vTaskDelay(pdMS_TO_TICKS(10));
 	}
 }
@@ -243,16 +239,19 @@ void vMouseTask(void* pvParameters) {
 
 	for (;;) {
 		mouseDriver.update();
-		/*const uint32_t nowMs = millis();
-		if (nowMs - lastTransportDebugMs >= 1000u) {
-			lastTransportDebugMs = nowMs;
-			mouseDriver.printTransportDebug(Serial);
-		}*/
+		
 		if (leftButton.changeTo(HIGH)) {
 			hapticDriver.playEffect(24); // Play a click effect
 		} else if (leftButton.changeTo(LOW)) {
 			hapticDriver.playEffect(25); // Stop effect on release
 		}
+
+		/*const uint32_t nowMs = millis();
+		if (nowMs - lastTransportDebugMs >= 1000u) {
+			lastTransportDebugMs = nowMs;
+			mouseDriver.printTransportDebug(Serial);
+		}*/
+		
 		// Always yield so TinyUSB/CDC servicing and lower-priority tasks can run.
 		vTaskDelay(pdMS_TO_TICKS(1));
 	}
@@ -311,7 +310,7 @@ void vDebugTask(void* pvParameters) {
 void setup() {
 	lightState.begin();
 	lightState.setEffect(lightInit);
-	xTaskCreate(vLightTask, "LightTask", 512, nullptr, 1, &lightTaskHandle);
+	xTaskCreate(vUpdateTask, "LightTask", 512, nullptr, 1, &updateTaskHandle);
 
 	//Serial.begin(115200);
 	
@@ -381,6 +380,9 @@ void setup() {
 	// Initialize Songbird UART protocol
   	core = uart.getProtocol();
   	uart.begin(SERIAL_BAUD);
+
+	// Register ping handler
+	core->setHeaderHandler(PING, pingHandler);
 
 	xTaskCreate(vMouseTask, "MouseTask", 2048, nullptr, 1, &mouseTaskHandle);
 	xTaskCreate(vServoTask, "ServoTask", 512, nullptr, 2, &servoTaskHandle);

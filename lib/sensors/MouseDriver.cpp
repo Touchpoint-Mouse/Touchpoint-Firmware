@@ -18,12 +18,13 @@ namespace {
 
 	Adafruit_USBD_HID gUsbHid;
 
-	void sendMouseReport(int8_t x, int8_t y, int8_t wheel) {
-		if (x == 0 && y == 0 && wheel == 0) {
-			// Don't send reports with no movement unless buttons changed.
-			return;
-		}
+	bool consumeButtonsDirty() {
+		const bool dirty = gMouseButtonsDirty;
+		gMouseButtonsDirty = false;
+		return dirty;
+	}
 
+	void sendMouseReport(int8_t x, int8_t y, int8_t wheel) {
 		// Remote wakeup
 		if (TinyUSBDevice.suspended()) {
 			// Wake up host if we are in suspend mode
@@ -78,12 +79,6 @@ namespace {
 		if (gMouseButtons != previous) {
 			gMouseButtonsDirty = true;
 		}
-	}
-
-	bool consumeButtonsDirty() {
-		const bool dirty = gMouseButtonsDirty;
-		gMouseButtonsDirty = false;
-		return dirty;
 	}
 }
 

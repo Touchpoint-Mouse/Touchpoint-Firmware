@@ -66,11 +66,18 @@ bool HapticDriver::playQueuedEffects() {
 }
 
 void HapticDriver::enableRealtimeMode() {
-    drv.setMode(DRV2605_MODE_REALTIME);
+    if (!realtimeMode) {
+        drv.setMode(DRV2605_MODE_REALTIME);
+        clearQueue();
+        realtimeMode = true;
+    }
 }
 
 void HapticDriver::disableRealtimeMode() {
-    drv.setMode(DRV2605_MODE_INTTRIG);
+    if (realtimeMode) {
+        drv.setMode(DRV2605_MODE_INTTRIG);
+        realtimeMode = false;
+    }
 }
 
 void HapticDriver::setRealtimeValue(uint8_t value) {
@@ -90,11 +97,5 @@ void HapticDriver::applyQueuedWaveforms() {
     for (uint8_t slot = 0; slot < queueCount; slot++) {
         drv.setWaveform(slot, queuedEffects[slot]);
     }
-
-    if (queueCount < MAX_WAVEFORM_SLOTS) {
-        drv.setWaveform(queueCount, 0);
-        return;
-    }
-
-    drv.setWaveform(MAX_WAVEFORM_SLOTS - 1, 0);
+    drv.setWaveform(queueCount, 0);
 }

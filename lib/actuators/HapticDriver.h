@@ -31,6 +31,7 @@ class HapticDriver {
         static constexpr uint8_t MAX_WAVEFORM_SLOTS = 8;
         uint8_t queuedEffects[MAX_WAVEFORM_SLOTS];
         uint8_t queueCount;
+        bool realtimeMode = false;
 
         void applyQueuedWaveforms();
 };
