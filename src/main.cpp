@@ -25,8 +25,6 @@
 #include <DigitalServo.h>
 #include <SongbirdCore.h>
 #include <SongbirdUART.h>
-#include <SongbirdUART.h>
-#include <SongbirdCore.h>
 
 #include "V0_2_Config.h"
 #include "HapticDriver.h"
@@ -36,6 +34,20 @@
 #include "LightState.h"
 
 #define SERIAL_BAUD 460800
+
+// Task priorities: higher value means higher priority.
+constexpr UBaseType_t TASK_PRIO_DEBUG = 1;
+constexpr UBaseType_t TASK_PRIO_EFFECTS = 2;
+constexpr UBaseType_t TASK_PRIO_SERVO = 3;
+constexpr UBaseType_t TASK_PRIO_MOUSE = 4;
+constexpr UBaseType_t TASK_PRIO_COMMS = 5;
+
+constexpr TickType_t TASK_PERIOD_COMMS = pdMS_TO_TICKS(1);
+constexpr TickType_t TASK_PERIOD_MOUSE = pdMS_TO_TICKS(1);
+constexpr TickType_t TASK_PERIOD_SERVO = pdMS_TO_TICKS(5);
+constexpr TickType_t TASK_PERIOD_EFFECTS = pdMS_TO_TICKS(10);
+constexpr TickType_t TASK_PERIOD_DEBUG = pdMS_TO_TICKS(100);
+constexpr uint32_t DESKTOP_PACKET_TIMEOUT_MS = 2500;
 
 // Initialize Songbird core for CDC UART
 // Serial node object
@@ -61,13 +73,15 @@ uint64_t lastElevationTime = 0;
 uint8_t currVibPriority = 0;
 
 // RTOS Task Handles
+TaskHandle_t commsTaskHandle = NULL;
 TaskHandle_t mouseTaskHandle = NULL;
-TaskHandle_t updateTaskHandle = NULL;
+TaskHandle_t effectsTaskHandle = NULL;
 TaskHandle_t servoTaskHandle = NULL;
 TaskHandle_t debugTaskHandle = NULL;
 
 // Connection state
 volatile bool connectedToDesktop = false;
+volatile uint32_t lastDesktopPacketMs = 0;
 
 // Initialize light state machine
 LightState lightState(NEOPIXEL_DIN);
@@ -97,8 +111,15 @@ IMU imu(IMU_RST);
 // Initialize mouse driver
 MouseDriver mouseDriver(opticalSensor, imu, scrollWheel, zoomWheel, leftButton, rightButton);
 
+void resetDesktopTimeout() {
+	lastDesktopPacketMs = millis();
+}
+
 // Ping handler
 void pingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
+	(void)pkt;
+	resetDesktopTimeout();
+
 	// Respond to ping
 	auto response = core->createPacket(PING);
 	core->sendPacket(response);
@@ -113,6 +134,8 @@ void pingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 
 // Elevation feedback handler
 void elevationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
+	resetDesktopTimeout();
+
 	// Read elevation value from packet (float)
 	float elevation = pkt->readFloat();
 	// Constrain elevation between 0 and 1
@@ -122,6 +145,8 @@ void elevationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 
 // Elevation smoothing handler
 void elevationSmoothingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
+	resetDesktopTimeout();
+
 	// Read max speed value from packet (float)
 	float speed = pkt->readFloat();
 	// Constrain speed to positive values
@@ -133,6 +158,8 @@ void elevationSmoothingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 
 // Vibration feedback handler
 void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
+	resetDesktopTimeout();
+
 	// Get priority from packet
 	uint8_t priority = pkt->readByte();
 
@@ -208,18 +235,40 @@ uint8_t servoLookup(float elevation) {
 
 // Servo task - runs motor control loop at high frequency
 void vServoTask(void* pvParameters) {
-  while (true) {
-	// Calculate target position with elevation and vibration
-	elevationServo.writeDegrees(servoLookup(getSmoothedElevation()));
-    vTaskDelay(pdMS_TO_TICKS(5));  // Run at 200 Hz
-  }
+	(void)pvParameters;
+	TickType_t lastWakeTime = xTaskGetTickCount();
+
+	for (;;) {
+		// Calculate target position with elevation and vibration
+		elevationServo.writeDegrees(servoLookup(getSmoothedElevation()));
+		vTaskDelayUntil(&lastWakeTime, TASK_PERIOD_SERVO);
+	}
 }
 
-void vUpdateTask(void* pvParameters) {
+void vCommsTask(void* pvParameters) {
 	(void)pvParameters;
+	TickType_t lastWakeTime = xTaskGetTickCount();
+
+	for (;;) {
+		uart.updateData();
+		vTaskDelayUntil(&lastWakeTime, TASK_PERIOD_COMMS);
+	}
+}
+
+void vEffectsTask(void* pvParameters) {
+	(void)pvParameters;
+	TickType_t lastWakeTime = xTaskGetTickCount();
 
 	for (;;) {
 		lightState.update();
+
+		if (connectedToDesktop) {
+			const uint32_t nowMs = millis();
+			if (nowMs - lastDesktopPacketMs > DESKTOP_PACKET_TIMEOUT_MS) {
+				connectedToDesktop = false;
+				lightState.setEffect(lightIdle);
+			}
+		}
 		
 		if (connectedToDesktop) {
 			// Plays vibration effects
@@ -230,16 +279,15 @@ void vUpdateTask(void* pvParameters) {
 				}
 			}
 		}
-		vTaskDelay(pdMS_TO_TICKS(10));
+		vTaskDelayUntil(&lastWakeTime, TASK_PERIOD_EFFECTS);
 	}
 }
 
 void vMouseTask(void* pvParameters) {
 	(void)pvParameters;
-	uint32_t lastTransportDebugMs = 0;
+	TickType_t lastWakeTime = xTaskGetTickCount();
 
 	for (;;) {
-		uart.updateData();
 		mouseDriver.update();
 		
 		if (!connectedToDesktop) {
@@ -256,8 +304,7 @@ void vMouseTask(void* pvParameters) {
 			mouseDriver.printTransportDebug(Serial);
 		}*/
 		
-		// Always yield so TinyUSB/CDC servicing and lower-priority tasks can run.
-		vTaskDelay(pdMS_TO_TICKS(1));
+		vTaskDelayUntil(&lastWakeTime, TASK_PERIOD_MOUSE);
 	}
 }
 
@@ -307,14 +354,14 @@ void vDebugTask(void* pvParameters) {
 		Serial.print(readings.imuRotation[3], 4);
 		Serial.println("]");
 
-		vTaskDelay(pdMS_TO_TICKS(100));
+		vTaskDelay(TASK_PERIOD_DEBUG);
 	}
 }
 
 void setup() {
 	lightState.begin();
 	lightState.setEffect(lightInit);
-	xTaskCreate(vUpdateTask, "LightTask", 512, nullptr, 1, &updateTaskHandle);
+	xTaskCreate(vEffectsTask, "EffectsTask", 768, nullptr, TASK_PRIO_EFFECTS, &effectsTaskHandle);
 
 	//Serial.begin(115200);
 	
@@ -387,10 +434,14 @@ void setup() {
 
 	// Register ping handler
 	core->setHeaderHandler(PING, pingHandler);
+	core->setHeaderHandler(ELEVATION, elevationFeedbackHandler);
+	core->setHeaderHandler(ELEVATION_SPEED, elevationSmoothingHandler);
+	core->setHeaderHandler(VIBRATION, vibrationFeedbackHandler);
 
-	xTaskCreate(vMouseTask, "MouseTask", 2048, nullptr, 1, &mouseTaskHandle);
-	xTaskCreate(vServoTask, "ServoTask", 512, nullptr, 2, &servoTaskHandle);
-	// xTaskCreate(vDebugTask, "DebugTask", 1024, nullptr, 1, &debugTaskHandle);
+	xTaskCreate(vCommsTask, "CommsTask", 1024, nullptr, TASK_PRIO_COMMS, &commsTaskHandle);
+	xTaskCreate(vMouseTask, "MouseTask", 2048, nullptr, TASK_PRIO_MOUSE, &mouseTaskHandle);
+	xTaskCreate(vServoTask, "ServoTask", 768, nullptr, TASK_PRIO_SERVO, &servoTaskHandle);
+	// xTaskCreate(vDebugTask, "DebugTask", 1024, nullptr, TASK_PRIO_DEBUG, &debugTaskHandle);
 	lightState.setEffect(lightIdle);
 }
 
