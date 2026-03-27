@@ -102,10 +102,12 @@ void pingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	// Respond to ping
 	auto response = core->createPacket(PING);
 	core->sendPacket(response);
+	Serial.flush();
 
 	// Mark as connected
 	connectedToDesktop = true;
-	// Set light effect to connected
+
+	// Set light effect
 	lightState.setEffect(lightConnected);
 }
 
@@ -217,7 +219,6 @@ void vUpdateTask(void* pvParameters) {
 	(void)pvParameters;
 
 	for (;;) {
-		uart.updateData();
 		lightState.update();
 		
 		if (connectedToDesktop) {
@@ -238,12 +239,15 @@ void vMouseTask(void* pvParameters) {
 	uint32_t lastTransportDebugMs = 0;
 
 	for (;;) {
+		uart.updateData();
 		mouseDriver.update();
 		
-		if (leftButton.changeTo(HIGH)) {
-			hapticDriver.playEffect(24); // Play a click effect
-		} else if (leftButton.changeTo(LOW)) {
-			hapticDriver.playEffect(25); // Stop effect on release
+		if (!connectedToDesktop) {
+			if (leftButton.changeTo(HIGH)) {
+				hapticDriver.playEffect(24); // Play a click effect
+			} else if (leftButton.changeTo(LOW)) {
+				hapticDriver.playEffect(25); // Stop effect on release
+			}
 		}
 
 		/*const uint32_t nowMs = millis();
