@@ -82,7 +82,7 @@ void vMouseTask(void* pvParameters) {
 		const uint32_t nowMs = millis();
 		if (nowMs - lastTransportDebugMs >= 1000u) {
 			lastTransportDebugMs = nowMs;
-			//mouseDriver.printTransportDebug(Serial);
+			mouseDriver.printTransportDebug(Serial);
 		}
 		if (leftButton.changeTo(HIGH)) {
 			hapticDriver.playEffect(24); // Play a click effect
@@ -149,6 +149,8 @@ void setup() {
 	lightState.setEffect(lightInit);
 	xTaskCreate(vLightTask, "LightTask", 512, nullptr, 1, &gLightTaskHandle);
 
+	Serial.begin(115200);
+	
 	// Uses internal pullups for button logic without external resistors
     pinMode(LEFT_BUTTON, INPUT_PULLUP);
     pinMode(RIGHT_BUTTON, INPUT_PULLUP);
@@ -210,17 +212,10 @@ void setup() {
 
 	mouseDriver.begin();
 
-	/*Serial.begin(115200);
-	const uint32_t serialStartMs = millis();
-	while (!Serial && (millis() - serialStartMs) < 1500u) {
-		delay(10);
-	}
-	Serial.println("Starting Touchpoint Mouse Firmware");
-	Serial.println("Init complete");*/
+	Serial.println("Init complete");
 
 	xTaskCreate(vMouseTask, "MouseTask", 2048, nullptr, 1, &gMouseTaskHandle);
 	// xTaskCreate(vDebugTask, "DebugTask", 1024, nullptr, 1, &gDebugTaskHandle);
-	// Serial.println("Setup complete");
 	lightState.setEffect(lightIdle);
 }
 
