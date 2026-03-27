@@ -75,16 +75,22 @@ void vLightTask(void* pvParameters) {
 
 void vMouseTask(void* pvParameters) {
 	(void)pvParameters;
-	TickType_t lastWakeTime = xTaskGetTickCount();
+	uint32_t lastTransportDebugMs = 0;
 
 	for (;;) {
 		mouseDriver.update();
+		const uint32_t nowMs = millis();
+		if (nowMs - lastTransportDebugMs >= 1000u) {
+			lastTransportDebugMs = nowMs;
+			//mouseDriver.printTransportDebug(Serial);
+		}
 		if (leftButton.changeTo(HIGH)) {
 			hapticDriver.playEffect(24); // Play a click effect
 		} else if (leftButton.changeTo(LOW)) {
 			hapticDriver.playEffect(25); // Stop effect on release
 		}
-		vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(1));
+		// Always yield so TinyUSB/CDC servicing and lower-priority tasks can run.
+		vTaskDelay(pdMS_TO_TICKS(1));
 	}
 }
 
@@ -142,13 +148,6 @@ void setup() {
 	lightState.begin();
 	lightState.setEffect(lightInit);
 	xTaskCreate(vLightTask, "LightTask", 512, nullptr, 1, &gLightTaskHandle);
-
-	Serial.begin(115200);
-	/*while (!Serial) {
-		; // Wait for serial port to connect. Needed for native USB
-	}*/
-	delay(1000);
-	Serial.println("Starting Touchpoint Mouse Firmware");
 
 	// Uses internal pullups for button logic without external resistors
     pinMode(LEFT_BUTTON, INPUT_PULLUP);
@@ -211,7 +210,15 @@ void setup() {
 
 	mouseDriver.begin();
 
-	xTaskCreate(vMouseTask, "MouseTask", 1024, nullptr, 2, &gMouseTaskHandle);
+	/*Serial.begin(115200);
+	const uint32_t serialStartMs = millis();
+	while (!Serial && (millis() - serialStartMs) < 1500u) {
+		delay(10);
+	}
+	Serial.println("Starting Touchpoint Mouse Firmware");
+	Serial.println("Init complete");*/
+
+	xTaskCreate(vMouseTask, "MouseTask", 2048, nullptr, 1, &gMouseTaskHandle);
 	// xTaskCreate(vDebugTask, "DebugTask", 1024, nullptr, 1, &gDebugTaskHandle);
 	// Serial.println("Setup complete");
 	lightState.setEffect(lightIdle);

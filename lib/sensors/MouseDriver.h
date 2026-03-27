@@ -37,6 +37,7 @@ public:
     MouseDriver(OpticalSensor& opticalSensor, IMU& imu, RotEncoder& scrollWheel, RotEncoder& zoomWheel, Button& leftButton, Button& rightButton);
 	void begin();
     void update();
+    void printTransportDebug(Stream& out) const;
     SensorReadings getSensorReadings() const;
     bool setCPI(uint16_t cpi);
     void setPointerSensitivity(float sensitivity);

@@ -1,7 +1,91 @@
 #include "MouseDriver.h"
-
-#include <Mouse.h>
+#include <Adafruit_TinyUSB.h>
 #include <math.h>
+
+namespace {
+	constexpr uint8_t kMouseButtonLeft = 0x01;
+	constexpr uint8_t kMouseButtonRight = 0x02;
+
+	uint8_t gMouseButtons = 0;
+	bool gMouseButtonsDirty = false;
+	uint32_t gReportsAttempted = 0;
+	uint32_t gReportsSent = 0;
+	uint32_t gReportsDroppedNotReady = 0;
+
+	uint8_t const kHidReportDescriptor[] = {
+		TUD_HID_REPORT_DESC_MOUSE()
+	};
+
+	Adafruit_USBD_HID gUsbHid;
+
+	void sendMouseReport(int8_t x, int8_t y, int8_t wheel) {
+		if (x == 0 && y == 0 && wheel == 0) {
+			// Don't send reports with no movement unless buttons changed.
+			return;
+		}
+
+		// Remote wakeup
+		if (TinyUSBDevice.suspended()) {
+			// Wake up host if we are in suspend mode
+			// and REMOTE_WAKEUP feature is enabled by host
+			TinyUSBDevice.remoteWakeup();
+		}
+
+		++gReportsAttempted;
+		if (!TinyUSBDevice.mounted() || !gUsbHid.ready()) {
+			++gReportsDroppedNotReady;
+			return;
+		}
+
+		hid_mouse_report_t report = {
+			.buttons = gMouseButtons,
+			.x = x,
+			.y = y,
+			.wheel = wheel,
+			.pan = 0
+		};
+		gUsbHid.sendReport(0, &report, sizeof(report));
+		++gReportsSent;
+	}
+
+	void beginMouseTransport() {
+		// Manual begin() is required on core without built-in support e.g. mbed rp2040
+		if (!TinyUSBDevice.isInitialized()) {
+			TinyUSBDevice.begin(0);
+		}
+		
+		gUsbHid.setBootProtocol(HID_ITF_PROTOCOL_MOUSE);
+		gUsbHid.setPollInterval(2);
+		gUsbHid.setReportDescriptor(kHidReportDescriptor, sizeof(kHidReportDescriptor));
+		gUsbHid.begin();
+
+		// If already enumerated, additional class driverr begin() e.g msc, hid, midi won't take effect until re-enumeration
+		if (TinyUSBDevice.mounted()) {
+			TinyUSBDevice.detach();
+			delay(10);
+			TinyUSBDevice.attach();
+		}
+	}
+
+	void setButtonState(uint8_t buttonMask, bool pressed) {
+		const uint8_t previous = gMouseButtons;
+		if (pressed) {
+			gMouseButtons |= buttonMask;
+		} else {
+			gMouseButtons &= static_cast<uint8_t>(~buttonMask);
+		}
+
+		if (gMouseButtons != previous) {
+			gMouseButtonsDirty = true;
+		}
+	}
+
+	bool consumeButtonsDirty() {
+		const bool dirty = gMouseButtonsDirty;
+		gMouseButtonsDirty = false;
+		return dirty;
+	}
+}
 
 MouseDriver::MouseDriver(
 	OpticalSensor& opticalSensor,
@@ -19,7 +103,12 @@ MouseDriver::MouseDriver(
 	rightButton(rightButton) {}
 
 void MouseDriver::begin() {
-	Mouse.begin();
+	beginMouseTransport();
+	gMouseButtons = 0;
+	gMouseButtonsDirty = false;
+	gReportsAttempted = 0;
+	gReportsSent = 0;
+	gReportsDroppedNotReady = 0;
 
 	// Reset wheel counters so real wheel state starts at zero at begin().
 	scrollWheel.reset();
@@ -48,6 +137,19 @@ void MouseDriver::begin() {
 
 MouseDriver::SensorReadings MouseDriver::getSensorReadings() const {
 	return sensorReadings;
+}
+
+void MouseDriver::printTransportDebug(Stream& out) const {
+	out.print("USBDBG mounted=");
+	out.print(TinyUSBDevice.mounted() ? 1 : 0);
+	out.print(" hidReady=");
+	out.print(gUsbHid.ready() ? 1 : 0);
+	out.print(" attempted=");
+	out.print(gReportsAttempted);
+	out.print(" sent=");
+	out.print(gReportsSent);
+	out.print(" dropped=");
+	out.println(gReportsDroppedNotReady);
 }
 
 bool MouseDriver::setCPI(uint16_t cpi) {
@@ -97,6 +199,16 @@ void MouseDriver::setZoomClockwisePositive(bool clockwisePositive) {
 }
 
 void MouseDriver::update() {
+	#ifdef TINYUSB_NEED_POLLING_TASK
+	// Manual call tud_task since it isn't called by Core's background
+	TinyUSBDevice.task();
+	#endif
+
+	// not enumerated()/mounted() yet: nothing to do
+	if (!TinyUSBDevice.mounted()) {
+		return;
+	}
+
 	// One combined HID report per cycle.
 	cycleMoveX = 0;
 	cycleMoveY = 0;
@@ -108,8 +220,11 @@ void MouseDriver::update() {
 	handleOptical();
 	updatePointerState();
 
-	if (cycleMoveX != 0 || cycleMoveY != 0 || cycleWheel != 0) {
-		Mouse.move(clampToHid(cycleMoveX), clampToHid(cycleMoveY), clampToHid(cycleWheel));
+	const int8_t moveX = clampToHid(cycleMoveX);
+	const int8_t moveY = clampToHid(cycleMoveY);
+	const int8_t wheel = clampToHid(cycleWheel);
+	if (moveX != 0 || moveY != 0 || wheel != 0 || consumeButtonsDirty()) {
+		sendMouseReport(moveX, moveY, wheel);
 	}
 }
 
@@ -151,15 +266,15 @@ void MouseDriver::handleButtons() {
 	sensorReadings.rightPressed = rightButton.state() == HIGH;
 
 	if (leftButton.changeTo(HIGH)) {
-		Mouse.press(MOUSE_LEFT);
+		setButtonState(kMouseButtonLeft, true);
 	} else if (leftButton.changeTo(LOW)) {
-		Mouse.release(MOUSE_LEFT);
+		setButtonState(kMouseButtonLeft, false);
 	}
 
 	if (rightButton.changeTo(HIGH)) {
-		Mouse.press(MOUSE_RIGHT);
+		setButtonState(kMouseButtonRight, true);
 	} else if (rightButton.changeTo(LOW)) {
-		Mouse.release(MOUSE_RIGHT);
+		setButtonState(kMouseButtonRight, false);
 	}
 }
 
