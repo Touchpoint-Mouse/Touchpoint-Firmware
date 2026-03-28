@@ -10,10 +10,12 @@
 #define B 4
 
 //Creates rotary encoder instance with click and delay pins
-RotEncoder encoder = RotEncoder(A, B);
+RotEncoder encoder = RotEncoder(EncoderResolution::SINGLE);
 
 void setup() {
   Serial.begin(9600);
+
+  encoder.attach(A, B);
 }
 
 void loop() {
@@ -21,7 +23,7 @@ void loop() {
   encoder.update();
 
   //If encoder has moved a click
-  if (encoder.hasMoved()) {
+  if (encoder.change() != 0) {
     //Logs encoder direction
     Serial.print("Direction: ");
     if (encoder.dir()) {
@@ -32,10 +34,10 @@ void loop() {
   
     //Logs total clicks of encoder since reset
     Serial.print("Total Steps: ");
-    Serial.println(encoder.steps());
+    Serial.println(encoder.totalSteps());
   
     //Tracks position of encoder were clockwise is positive
     Serial.print("Net Steps: ");
-    Serial.println(encoder.cw_steps());
+    Serial.println(encoder.netSteps());
   }
 }

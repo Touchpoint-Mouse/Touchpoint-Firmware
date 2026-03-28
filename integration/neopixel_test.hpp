@@ -6,7 +6,7 @@
 #define NEOPIXEL_TEST_HPP
 
 #include <Arduino.h>
-#include "V0_2_Config.h"
+#include "hardware_config.h"
 #include <Adafruit_NeoPixel.h>
 
 // Which pin on the Arduino is connected to the NeoPixels?

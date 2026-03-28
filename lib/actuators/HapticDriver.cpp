@@ -13,6 +13,24 @@ HapticDriver::HapticDriver() {
     queueCount = 0;
 }
 
+bool HapticDriver::requestPriority(uint8_t priority) {
+    if (priority < currentPriority) {
+        return false;
+    }
+
+    if (priority > currentPriority) {
+        drv.stop();
+        clearQueue();
+        if (realtimeMode) {
+            drv.setMode(DRV2605_MODE_INTTRIG);
+            realtimeMode = false;
+        }
+    }
+
+    currentPriority = priority;
+    return true;
+}
+
 bool HapticDriver::begin(TwoWire* wire) {
     // Initialize the haptic driver hardware
     // Initialize I2C with pins from config
@@ -27,16 +45,25 @@ bool HapticDriver::begin(TwoWire* wire) {
     return true;
 }
 
-bool HapticDriver::playEffect(uint8_t effect) {
+bool HapticDriver::playEffect(uint8_t effect, uint8_t priority) {
     clearQueue();
-    if (!queueEffect(effect)) {
+    if (!queueEffect(effect, priority)) {
         return false;
     }
 
     return playQueuedEffects();
 }
 
-bool HapticDriver::queueEffect(uint8_t effect) {
+bool HapticDriver::queueEffect(uint8_t effect, uint8_t priority) {
+    if (!requestPriority(priority)) {
+        return false;
+    }
+
+    if (realtimeMode) {
+        drv.setMode(DRV2605_MODE_INTTRIG);
+        realtimeMode = false;
+    }
+
     if (queueCount >= MAX_WAVEFORM_SLOTS) {
         return false;
     }
@@ -56,6 +83,9 @@ uint8_t HapticDriver::queuedEffectCount() const {
 
 bool HapticDriver::playQueuedEffects() {
     if (queueCount == 0) {
+        if (!realtimeMode && (drv.readRegister8(DRV2605_REG_GO_ADDR) & 0x01) == 0) {
+            currentPriority = 0;
+        }
         return false;
     }
 
@@ -65,7 +95,11 @@ bool HapticDriver::playQueuedEffects() {
     return true;
 }
 
-void HapticDriver::enableRealtimeMode() {
+void HapticDriver::enableRealtimeMode(uint8_t priority) {
+    if (!requestPriority(priority)) {
+        return;
+    }
+
     if (!realtimeMode) {
         drv.setMode(DRV2605_MODE_REALTIME);
         clearQueue();
@@ -84,13 +118,33 @@ bool HapticDriver::isRealtimeMode() const {
     return realtimeMode;
 }
 
-void HapticDriver::setRealtimeValue(int8_t value) {
+void HapticDriver::setRealtimeValue(int8_t value, uint8_t priority) {
+    if (!requestPriority(priority)) {
+        return;
+    }
+
+    if (!realtimeMode) {
+        drv.setMode(DRV2605_MODE_REALTIME);
+        clearQueue();
+        realtimeMode = true;
+    }
+
     drv.setRealtimeValue(value);
+
+    if (value == 0) {
+        currentPriority = 0;
+    }
 }
 
 void HapticDriver::stop() {
     // Send command to stop any currently playing effect
     drv.stop();
+    clearQueue();
+    if (realtimeMode) {
+        drv.setMode(DRV2605_MODE_INTTRIG);
+        realtimeMode = false;
+    }
+    currentPriority = 0;
 }
 
 bool HapticDriver::isPlaying() {

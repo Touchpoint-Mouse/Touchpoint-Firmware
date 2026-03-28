@@ -2,6 +2,10 @@
 #include <Adafruit_TinyUSB.h>
 #include <math.h>
 
+#ifndef ZOOM_TRACE_DEBUG
+#define ZOOM_TRACE_DEBUG 1
+#endif
+
 namespace {
 	constexpr uint8_t kMouseButtonLeft = 0x01;
 	constexpr uint8_t kMouseButtonRight = 0x02;
@@ -109,10 +113,6 @@ void MouseDriver::begin() {
 	scrollWheel.reset();
 	zoomWheel.reset();
 
-	// Proxy wheel state is accumulated scaled HID steps sent to host.
-	proxyScrollSent = 0;
-	proxyZoomSent = 0;
-
 	// Pointer state starts at pointer offset
 	// start with zero running reconciliation error (real - proxy) in mm.
 	pointerErrorMm = Vector2f::Zero();
@@ -154,8 +154,25 @@ bool MouseDriver::setCPI(uint16_t cpi) {
 
 void MouseDriver::setPointerSensitivity(float sensitivity) {
 	if (sensitivity > 0.0f) {
-		pointerSensitivity = sensitivity;
+		basePointerSensitivity = sensitivity;
 	}
+}
+
+void MouseDriver::setZoomResolution(uint8_t resolution) {
+	if (resolution == 0) {
+		return;
+	}
+
+	zoomResolution = resolution;
+	zoomWheel.setBounds(-resolution, resolution);
+}
+
+void MouseDriver::setZoomRange(float range) {
+	if (range < 0.0f) {
+		return;
+	}
+
+	zoomRange = range;
 }
 
 void MouseDriver::setPointerOffset(Vector2f offset) {
@@ -163,18 +180,6 @@ void MouseDriver::setPointerOffset(Vector2f offset) {
 	pointerOffsetRealMm = relativeImuRotation * pointerOffset;
 	pointerOffsetProxyMm = pointerOffsetRealMm;
 	hasPointerOffsetProxy = true;
-}
-
-void MouseDriver::setScrollSensitivity(float sensitivity) {
-	if (sensitivity > 0.0f) {
-		scrollSensitivity = sensitivity;
-	}
-}
-
-void MouseDriver::setZoomSensitivity(float sensitivity) {
-	if (sensitivity > 0.0f) {
-		zoomSensitivity = sensitivity;
-	}
 }
 
 void MouseDriver::setHeadlessModeEnabled(bool enabled) {
@@ -185,11 +190,11 @@ void MouseDriver::setOpticalRotation(OpticalRotation rotation) {
 	opticalRotation = rotation;
 }
 
-void MouseDriver::setScrollClockwisePositive(bool clockwisePositive) {
+void MouseDriver::setScrollDir(bool clockwisePositive) {
 	scrollWheel.setDirection(clockwisePositive ? RotEncoder::Direction::CW : RotEncoder::Direction::CCW);
 }
 
-void MouseDriver::setZoomClockwisePositive(bool clockwisePositive) {
+void MouseDriver::setZoomDir(bool clockwisePositive) {
 	zoomWheel.setDirection(clockwisePositive ? RotEncoder::Direction::CW : RotEncoder::Direction::CCW);
 }
 
@@ -231,6 +236,17 @@ int8_t MouseDriver::clampToHid(int32_t value) const {
 		return -127;
 	}
 	return static_cast<int8_t>(value);
+}
+
+float MouseDriver::getPointerSensitivity() const {
+	if (zoomResolution == 0) {
+		return basePointerSensitivity;
+	}
+
+	int8_t zoomLevel = static_cast<int8_t>(zoomWheel.netSteps());
+
+	float zoomFactor = 1.0f + (zoomLevel * zoomRange / zoomResolution);
+	return basePointerSensitivity * zoomFactor;
 }
 
 void MouseDriver::applyOpticalRotation(const Vector2f& in, Vector2f& out) const {
@@ -277,30 +293,14 @@ void MouseDriver::handleWheels() {
 	scrollWheel.update();
 	zoomWheel.update();
 
-	// Absolute net encoder state is the source of truth.
-	const int32_t realScrollSteps = scrollWheel.netSteps();
-	const int32_t realZoomSteps = zoomWheel.netSteps();
+	if (scrollWheel.change() != 0) {
+		sensorReadings.scrollSteps = scrollWheel.netSteps();
+		cycleWheel += scrollWheel.change();
+	}
 
-	sensorReadings.scrollSteps = realScrollSteps;
-	sensorReadings.zoomSteps = realZoomSteps;
-
-	// Scroll reconciliation pipeline:
-	// real (unscaled steps) -> compare to unscaled proxy -> rescale -> clamp -> send.
-	// Proxy stores scaled HID steps sent to host.
-	const float scrollProxyUnscaled = proxyScrollSent / scrollSensitivity;
-	const float scrollErrorUnscaled = realScrollSteps - scrollProxyUnscaled;
-	const int32_t scrollDeltaHid = static_cast<int32_t>(lroundf(scrollErrorUnscaled * scrollSensitivity));
-	const int8_t scrollStepHid = clampToHid(scrollDeltaHid);
-	cycleWheel += scrollStepHid;
-	proxyScrollSent += scrollStepHid;
-
-	// Zoom reconciliation follows the same model and maps to X-axis movement.
-	const float zoomProxyUnscaled = proxyZoomSent / zoomSensitivity;
-	const float zoomErrorUnscaled = realZoomSteps - zoomProxyUnscaled;
-	const int32_t zoomDeltaHid = static_cast<int32_t>(lroundf(zoomErrorUnscaled * zoomSensitivity));
-	const int8_t zoomStepHid = clampToHid(zoomDeltaHid);
-	cycleMoveX += zoomStepHid;
-	proxyZoomSent += zoomStepHid;
+	if (zoomWheel.change() != 0) {
+		sensorReadings.zoomSteps = zoomWheel.netSteps();
+	}
 }
 
 void MouseDriver::handleImu() {
@@ -394,6 +394,9 @@ void MouseDriver::updatePointerState() {
 			pointerOffsetProxyMm.y() += offsetStepY * offsetStepToMm;
 		}
 	}
+
+	// Get pointer sensitivity from zoom level
+	const float pointerSensitivity = getPointerSensitivity();
 
 	// Convert error to HID deltas, clamp, then remove sent motion from error.
 	const int32_t deltaXHid = static_cast<int32_t>(lroundf(pointerErrorMm.x() * pointerSensitivity));

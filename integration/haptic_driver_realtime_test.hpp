@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include "V0_2_Config.h"
+#include "hardware_config.h"
 #include "Adafruit_DRV2605.h"
 
 Adafruit_DRV2605 drv;

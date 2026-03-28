@@ -2,7 +2,7 @@
 #define SERVO_TEST_HPP
 
 #include <Arduino.h>
-#include "V0_2_Config.h"
+#include "hardware_config.h"
 #include "DigitalServo.h"
 
 DigitalServo testServo;

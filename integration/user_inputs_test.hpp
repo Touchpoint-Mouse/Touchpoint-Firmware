@@ -8,13 +8,13 @@ Tests buttons and scroll wheel inputs by printing their states to the serial mon
 #include <Arduino.h>
 #include <Button.h>
 #include <RotEncoder.h>
-#include "V0_2_Config.h"
+#include "hardware_config.h"
 
 // Initialize buttons and rotary encoder with appropriate pins
 Button leftButton(3, PullMode::PULLUP); // Left mouse button with debounce of 3ms
 Button rightButton(3, PullMode::PULLUP); // Right mouse button with debounce of 3ms
-RotEncoder scrollWheel(3, EncoderResolution::DOUBLE); // Scroll wheel encoder with double resolution
-RotEncoder zoomWheel(3, EncoderResolution::SINGLE); // Zoom wheel encoder with single resolution
+RotEncoder scrollWheel(EncoderResolution::DOUBLE); // Scroll wheel encoder with double resolution
+RotEncoder zoomWheel(EncoderResolution::SINGLE); // Zoom wheel encoder with single resolution
 
 void setup() {
     Serial.begin(115200);
@@ -32,6 +32,8 @@ void setup() {
     rightButton.attach(RIGHT_BUTTON);
     scrollWheel.attach(SCROLLWHEEL_A, SCROLLWHEEL_B);
     zoomWheel.attach(ZOOMWHEEL_A, ZOOMWHEEL_B);
+
+    zoomWheel.setBounds(-2, 2); // Set zoom wheel bounds for testing
 }
 
 void loop() {
@@ -52,24 +54,25 @@ void loop() {
         Serial.print("Right Button: ");
         Serial.println(rightButton.state() ? "Pressed" : "Released");
     }
-    if (scrollWheel.hasMoved()) {
+    if (scrollWheel.change() != 0) {
         Serial.print("Scroll Wheel: ");
         Serial.print("Steps: ");
-        Serial.print(scrollWheel.steps());
+        Serial.print(scrollWheel.totalSteps());
         Serial.print(" | CW Steps: ");
         Serial.print(scrollWheel.netSteps());
         Serial.print(" | Direction: ");
         Serial.println(scrollWheel.dir() ? "CW" : "CCW");
     }
-    if (zoomWheel.hasMoved()) {
+    if (zoomWheel.change() != 0) {
         Serial.print("Zoom Wheel: ");
         Serial.print("Steps: ");
-        Serial.print(zoomWheel.steps());
+        Serial.print(zoomWheel.totalSteps());
         Serial.print(" | CW Steps: ");
         Serial.print(zoomWheel.netSteps());
         Serial.print(" | Direction: ");
         Serial.println(zoomWheel.dir() ? "CW" : "CCW");
     }
+    Serial.flush();
 }
 
 #endif // USER_INPUTS_TEST_HPP

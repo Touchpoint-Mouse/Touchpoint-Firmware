@@ -2,7 +2,7 @@
 #define IMU_TEST_HPP
 
 #include <Arduino.h>
-#include "V0_2_Config.h"
+#include "hardware_config.h"
 #include <Wire.h>
 #include <Adafruit_BNO08x.h>
 

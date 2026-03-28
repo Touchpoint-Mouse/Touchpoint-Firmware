@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <SPI.h>
-#include "V0_2_Config.h"
+#include "hardware_config.h"
 #include "SROM.h"
 
 // For RP2040, data is in flash by default, no PROGMEM needed
@@ -109,7 +109,7 @@ void setup() {
   
   pinMode(Motion_Interrupt_Pin, INPUT_PULLUP);
 
-  // Configure SPI with pins from V0_2_Config.h
+  // Configure SPI with pins from hardware_config.h
   SPI.setSCK(OPTICAL_SCK);
   SPI.setTX(OPTICAL_MOSI);
   SPI.setRX(OPTICAL_MISO);

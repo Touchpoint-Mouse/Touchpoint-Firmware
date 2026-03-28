@@ -12,7 +12,7 @@
 #include <Adafruit_BNO08x.h>
 //#include <SongbirdCore.h>
 //#include <SongbirdUART.h>
-#include "../integration/haptic_driver_realtime_test.hpp" // Testing file to run
+#include "../integration/user_inputs_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 #ifndef INTEGRATION_TESTING
@@ -26,12 +26,16 @@
 #include <SongbirdCore.h>
 #include <SongbirdUART.h>
 
-#include "V0_2_Config.h"
+#include "hardware_config.h"
 #include "HapticDriver.h"
 #include "OpticalSensor.h"
 #include "MouseDriver.h"
 #include "IMU.h"
 #include "LightState.h"
+
+#ifndef ZOOM_TRACE_DEBUG
+#define ZOOM_TRACE_DEBUG 1
+#endif
 
 // Task priorities: higher value means higher priority.
 constexpr UBaseType_t TASK_PRIO_DEBUG = 1;
@@ -45,7 +49,6 @@ constexpr TickType_t TASK_PERIOD_MOUSE = pdMS_TO_TICKS(1);
 constexpr TickType_t TASK_PERIOD_SERVO = pdMS_TO_TICKS(5);
 constexpr TickType_t TASK_PERIOD_EFFECTS = pdMS_TO_TICKS(10);
 constexpr TickType_t TASK_PERIOD_DEBUG = pdMS_TO_TICKS(100);
-constexpr uint32_t DESKTOP_PACKET_TIMEOUT_MS = 2500;
 
 // Initialize Songbird core for CDC UART
 // Serial node object
@@ -58,9 +61,6 @@ float lastElevation = 0.f;
 float elevationTarget = 0.f;
 float maxElevationSpeed = 0.f; // units per second (0 = no smoothing)
 uint64_t lastElevationTime = 0;
-
-// Vibration parameters
-uint8_t currVibPriority = 0;
 
 // RTOS Task Handles
 TaskHandle_t commsTaskHandle = NULL;
@@ -84,8 +84,8 @@ LightState::SolidEffect lightDebug(LightState::colorFromPreset(LightState::Light
 // Initialize buttons and rotary encoder
 Button leftButton(3, PullMode::PULLUP); // Left mouse button with debounce of 3ms
 Button rightButton(3, PullMode::PULLUP); // Right mouse button with debounce of 3ms
-RotEncoder scrollWheel(3, EncoderResolution::DOUBLE); // Scroll wheel encoder with double resolution
-RotEncoder zoomWheel(3, EncoderResolution::SINGLE); // Zoom wheel encoder with single resolution
+RotEncoder scrollWheel(EncoderResolution::DOUBLE); // Scroll wheel encoder with double resolution
+RotEncoder zoomWheel(EncoderResolution::SINGLE); // Zoom wheel encoder with single resolution
 
 // Initialize elevation servo
 DigitalServo elevationServo;
@@ -101,6 +101,20 @@ IMU imu(IMU_RST);
 
 // Initialize mouse driver
 MouseDriver mouseDriver(opticalSensor, imu, scrollWheel, zoomWheel, leftButton, rightButton);
+
+MouseDriver::OpticalRotation opticalRotationFromConfig() {
+	switch (MOUSE_OPTICAL_ROTATION_DEG) {
+		case 90:
+			return MouseDriver::OpticalRotation::Deg90;
+		case 180:
+			return MouseDriver::OpticalRotation::Deg180;
+		case 270:
+			return MouseDriver::OpticalRotation::Deg270;
+		case 0:
+		default:
+			return MouseDriver::OpticalRotation::Deg0;
+	}
+}
 
 void resetDesktopTimeout() {
 	lastDesktopPacketMs = millis();
@@ -154,26 +168,13 @@ void vibrationEffectHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	// Get priority from packet
 	uint8_t priority = pkt->readByte();
 
-	// If priority is greater than current priority, stop all vibrations
-	if (priority > currVibPriority) {
-		hapticDriver.stop();
-		hapticDriver.clearQueue();
-		currVibPriority = priority;
-
-		// Disable realtime mode to play new effects
-		hapticDriver.disableRealtimeMode();
-	} else if (priority < currVibPriority) {
-		// Ignore this command if it's lower priority than current vibration
-		return;
-	}
-
 	// While there are vibration commands left in the packet
 	while (pkt->getRemainingBytes() > 0) {
 		// Get effect id
 		uint8_t effectId = pkt->readByte();
 
 		// Queue the effect
-		hapticDriver.queueEffect(effectId);
+		hapticDriver.queueEffect(effectId, priority);
 	}
 }
 
@@ -184,25 +185,12 @@ void vibrationIntensityHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	// Get priority from packet
 	uint8_t priority = pkt->readByte();
 
-	// If priority is greater than current priority, update
-	if (priority > currVibPriority) {
-		// Update current vibration priority
-		currVibPriority = priority;
-	} else if (priority < currVibPriority) {
-		return;
-	}
-
 	// Read intensity value from packet (0-255)
 	int8_t intensity = pkt->readByte();
 
-	// If intensity is 0, reset priority to allow future vibrations through
-	if (intensity == 0) {
-		currVibPriority = 0;
-	}
-
 	// Set realtime mode and intensity
-	hapticDriver.enableRealtimeMode();
-	hapticDriver.setRealtimeValue(intensity);
+	hapticDriver.enableRealtimeMode(priority);
+	hapticDriver.setRealtimeValue(intensity, priority);
 }
 
 float getSmoothedElevation() {
@@ -277,12 +265,7 @@ void vEffectsTask(void* pvParameters) {
 			}
 		
 			// Plays vibration effects
-			if (!hapticDriver.playQueuedEffects()) {
-				// Resets vibration priority if no effects are playing
-				if (!hapticDriver.isRealtimeMode() && !hapticDriver.isPlaying()) {
-					currVibPriority = 0;
-				}
-			}
+			hapticDriver.playQueuedEffects();
 		}
 		vTaskDelayUntil(&lastWakeTime, TASK_PERIOD_EFFECTS);
 	}
@@ -294,13 +277,27 @@ void vMouseTask(void* pvParameters) {
 
 	for (;;) {
 		mouseDriver.update();
-		
-		if (!connectedToDesktop) {
-			if (leftButton.changeTo(HIGH)) {
-				hapticDriver.playEffect(24); // Play a click effect
-			} else if (leftButton.changeTo(LOW)) {
-				hapticDriver.playEffect(25); // Stop effect on release
-			}
+
+		const int8_t zoomBoundaryHit = zoomWheel.boundaryHitEvent();
+		if (zoomBoundaryHit > 0) {
+			hapticDriver.playEffect(ZOOM_UPPER_BOUNDARY_EFFECT);
+		} else if (zoomBoundaryHit < 0) {
+			hapticDriver.playEffect(ZOOM_LOWER_BOUNDARY_EFFECT);
+		}
+
+		if (leftButton.changeTo(HIGH)) {
+			hapticDriver.playEffect(CLICK_DOWN_EFFECT); // Play a click effect
+		} else if (leftButton.changeTo(LOW)) {
+			hapticDriver.playEffect(CLICK_UP_EFFECT); // Stop effect on release
+		}
+
+		const int8_t zoomChange = zoomWheel.change();
+
+		if (zoomChange != 0 && connectedToDesktop) {
+			auto pixelsPerMmPacket = core->createPacket(PIXELS_PER_MM);
+			pixelsPerMmPacket.writeFloat(mouseDriver.getPointerSensitivity());
+			core->sendPacket(pixelsPerMmPacket);
+			Serial.flush();
 		}
 
 		/*const uint32_t nowMs = millis();
@@ -422,16 +419,16 @@ void setup() {
 		}
 	}
 
-	mouseDriver.setCPI(1100);
-	mouseDriver.setHeadlessModeEnabled(true);
-	mouseDriver.setPointerOffset(Vector2f(-29.676f, -45.375f));
-	mouseDriver.setPointerSensitivity(2.0f);
-	mouseDriver.setScrollSensitivity(1.0f);
-	mouseDriver.setZoomSensitivity(1.0f);
+	mouseDriver.setCPI(MOUSE_CPI);
+	mouseDriver.setHeadlessModeEnabled(MOUSE_HEADLESS_MODE_ENABLED);
+	mouseDriver.setPointerOffset(MOUSE_POINTER_OFFSET_MM);
+	mouseDriver.setPointerSensitivity(MOUSE_POINTER_SENSITIVITY);
+	mouseDriver.setZoomResolution(MOUSE_ZOOM_RESOLUTION);
+	mouseDriver.setZoomRange(MOUSE_ZOOM_RANGE);
 	imu.setZAxisOrientation(IMU::ZAxisOrientation::Down);
-	mouseDriver.setOpticalRotation(MouseDriver::OpticalRotation::Deg270);
-	mouseDriver.setScrollClockwisePositive(true);
-	mouseDriver.setZoomClockwisePositive(true);
+	mouseDriver.setOpticalRotation(opticalRotationFromConfig());
+	mouseDriver.setScrollDir(MOUSE_SCROLL_DIR);
+	mouseDriver.setZoomDir(MOUSE_ZOOM_DIR);
 
 	mouseDriver.begin();
 

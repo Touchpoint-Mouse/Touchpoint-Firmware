@@ -41,13 +41,14 @@ public:
     SensorReadings getSensorReadings() const;
     bool setCPI(uint16_t cpi);
     void setPointerSensitivity(float sensitivity);
+    void setZoomResolution(uint8_t resolution);
+    void setZoomRange(float range);
+    float getPointerSensitivity() const;
     void setPointerOffset(Vector2f offset);
-    void setScrollSensitivity(float sensitivity);
-    void setZoomSensitivity(float sensitivity);
     void setHeadlessModeEnabled(bool enabled);
     void setOpticalRotation(OpticalRotation rotation);
-    void setScrollClockwisePositive(bool clockwisePositive);
-    void setZoomClockwisePositive(bool clockwisePositive);
+    void setScrollDir(bool clockwisePositive);
+    void setZoomDir(bool clockwisePositive);
 
 private:
     OpticalSensor& opticalSensor;
@@ -67,15 +68,9 @@ private:
     Vector2f pointerOffsetProxyMm = Vector2f::Zero();
     bool hasPointerOffsetProxy = false;
 
-	// Proxy states track what has been sent to the host:
-	// - wheel proxy is in scaled HID steps sent
-	// Pointer reconciliation keeps only running error in mm.
-    int32_t proxyScrollSent = 0;
-    int32_t proxyZoomSent = 0;
-
-	float pointerSensitivity = 1.0f;
-	float scrollSensitivity = 1.0f;
-	float zoomSensitivity = 1.0f;
+    float basePointerSensitivity = 1.0f;
+    uint8_t zoomResolution = 2;
+    float zoomRange = 0.5f;
     bool headlessModeEnabled = true;
     OpticalRotation opticalRotation = OpticalRotation::Deg0;
     SensorReadings sensorReadings;
