@@ -12,7 +12,7 @@
 #include <Adafruit_BNO08x.h>
 //#include <SongbirdCore.h>
 //#include <SongbirdUART.h>
-#include "../integration/user_inputs_test.hpp" // Testing file to run
+#include "../integration/servo_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 #ifndef INTEGRATION_TESTING
@@ -224,8 +224,30 @@ float getSmoothedElevation() {
 }
 
 uint8_t servoLookup(float elevation) {
-	// Simple linear mapping for demo purposes
-	return (uint8_t) (elevation * 180); // Map 0-1 elevation to 0-180 degrees
+	// Interpolates based on lookup table using lower-bound binary search.
+	const size_t length = sizeof(SERVO_HEIGHTS_MM) / sizeof(SERVO_HEIGHTS_MM[0]);
+	size_t low = 0;
+	size_t high = length;
+
+	while (low < high) {
+		const size_t mid = low + ((high - low) / 2);
+		if (elevation > SERVO_HEIGHTS_MM[mid]) {
+			low = mid + 1;
+		} else {
+			high = mid;
+		}
+	}
+
+	const size_t index = low;
+
+	if (index == 0) {
+		return SERVO_ANGLE_START;
+	} else if (index >= length) {
+		return SERVO_ANGLE_START + length - 1;
+	} else {
+		float ratio = (elevation - SERVO_HEIGHTS_MM[index - 1]) / (SERVO_HEIGHTS_MM[index] - SERVO_HEIGHTS_MM[index - 1]);
+		return SERVO_ANGLE_START + index - 1 + ratio;
+	}
 }
 
 // Servo task - runs motor control loop at high frequency

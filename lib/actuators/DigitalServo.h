@@ -14,7 +14,7 @@ class DigitalServo {
         void attach(uint8_t pin);
         void setPWMFrequency(uint16_t freq);
         void writeMicroseconds(uint16_t us);
-        void writeDegrees(float degrees);
+        void writeDegrees(uint8_t degrees);
         bool attached();
 
     private:

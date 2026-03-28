@@ -80,11 +80,11 @@ void DigitalServo::writeMicroseconds(uint16_t us) {
 #endif
 }
 
-void DigitalServo::writeDegrees(float degrees) {
+void DigitalServo::writeDegrees(uint8_t degrees) {
     if (!isAttached) return;
     
     // Constrain degrees to valid range (0-180)
-    degrees = constrain(degrees, 0.0f, 180.0f);
+    degrees = constrain(degrees, 0, 180);
     
     // Map degrees to pulse width
     // 0° → rangeCenter - rangeLength (900us)
