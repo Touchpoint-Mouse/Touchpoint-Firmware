@@ -226,6 +226,10 @@ float getSmoothedElevation() {
 uint8_t servoLookup(float elevation) {
 	// Interpolates based on lookup table using lower-bound binary search.
 	const size_t length = sizeof(SERVO_HEIGHTS_MM) / sizeof(SERVO_HEIGHTS_MM[0]);
+	
+	// Scale elevation between min and max height in table
+	elevation = elevation * (SERVO_HEIGHTS_MM[length - 1] - SERVO_HEIGHTS_MM[0]) + SERVO_HEIGHTS_MM[0];
+	
 	size_t low = 0;
 	size_t high = length;
 
@@ -415,8 +419,9 @@ void setup() {
 	}
 
 	// Setup elevation servo
-	//elevationServo.attach(SERVO_PWM);
-	//elevationServo.setPWMFrequency(SERVO_PWM_FREQ);
+	elevationServo.attach(SERVO_PWM);
+	elevationServo.setPWMFrequency(SERVO_PWM_FREQ);
+	elevationServo.writeDegrees(SERVO_ANGLE_START); // Start at initial position
 
 	// Setup imu
 	SPI1.setSCK(IMU_SCK);
