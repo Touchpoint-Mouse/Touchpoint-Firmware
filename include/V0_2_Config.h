@@ -16,6 +16,23 @@ Hardware configuration for Raspberry Pi Pico prototype board for Touchpoint Mous
 uint8_t CORE_0 = 0;
 uint8_t CORE_1 = 1;
 
+
+//////////////////////////////////////////////////////////////////
+// Communications configuration
+//////////////////////////////////////////////////////////////////
+
+#define SERIAL_BAUD 460800
+
+// Header enum
+enum Headers {
+    PING = 0xFF,
+    ELEVATION = 0x10,
+    ELEVATION_SPEED = 0x11,
+    VIBRATION_EFFECT = 0x20,
+    VIBRATION_INTENSITY = 0x21
+};
+
+
 //////////////////////////////////////////////////////////////////
 // Sensor configuration
 //////////////////////////////////////////////////////////////////
@@ -57,5 +74,6 @@ uint8_t CORE_1 = 1;
 //////////////////////////////////////////////////////////////////
 
 #define SERVO_PWM 14
+#define SERVO_PWM_FREQ 200
 
 #endif // V0_2_CONFIG_H

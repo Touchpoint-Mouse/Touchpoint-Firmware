@@ -80,7 +80,11 @@ void HapticDriver::disableRealtimeMode() {
     }
 }
 
-void HapticDriver::setRealtimeValue(uint8_t value) {
+bool HapticDriver::isRealtimeMode() const {
+    return realtimeMode;
+}
+
+void HapticDriver::setRealtimeValue(int8_t value) {
     drv.setRealtimeValue(value);
 }
 

@@ -22,7 +22,8 @@ class HapticDriver {
 
         void enableRealtimeMode();
         void disableRealtimeMode();
-        void setRealtimeValue(uint8_t value);
+        bool isRealtimeMode() const;
+        void setRealtimeValue(int8_t value);
         void stop();
         bool isPlaying();
 

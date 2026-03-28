@@ -12,7 +12,7 @@
 #include <Adafruit_BNO08x.h>
 //#include <SongbirdCore.h>
 //#include <SongbirdUART.h>
-#include "../integration/user_inputs_test.hpp" // Testing file to run
+#include "../integration/haptic_driver_realtime_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 #ifndef INTEGRATION_TESTING
@@ -33,8 +33,6 @@
 #include "IMU.h"
 #include "LightState.h"
 
-#define SERIAL_BAUD 460800
-
 // Task priorities: higher value means higher priority.
 constexpr UBaseType_t TASK_PRIO_DEBUG = 1;
 constexpr UBaseType_t TASK_PRIO_EFFECTS = 2;
@@ -54,14 +52,6 @@ constexpr uint32_t DESKTOP_PACKET_TIMEOUT_MS = 2500;
 SongbirdUART uart("UART");
 // Serial protocol object
 std::shared_ptr<SongbirdCore> core;
-
-// Header enum
-enum ElevationVibrationHeaders {
-	PING = 0xFF,
-	ELEVATION = 0x10,
-	ELEVATION_SPEED = 0x11,
-	VIBRATION = 0x20
-};
 
 // Elevation paramaters
 float lastElevation = 0.f;
@@ -89,6 +79,7 @@ LightState::OffEffect lightOff;
 LightState::PulseEffect lightInit(180, 5.f, LightState::colorFromPreset(LightState::LightColor::Red), 0.0f);
 LightState::PulseEffect lightIdle(180, 0.5f, LightState::colorFromPreset(LightState::LightColor::Green), 0.0f);
 LightState::PulseEffect lightConnected(180, 0.5f, LightState::colorFromPreset(LightState::LightColor::Blue), 0.0f);
+LightState::SolidEffect lightDebug(LightState::colorFromPreset(LightState::LightColor::Yellow));
 
 // Initialize buttons and rotary encoder
 Button leftButton(3, PullMode::PULLUP); // Left mouse button with debounce of 3ms
@@ -156,33 +147,21 @@ void elevationSmoothingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	maxElevationSpeed = speed;
 }
 
-// Vibration feedback handler
-void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
+// Vibration effect handler
+void vibrationEffectHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	resetDesktopTimeout();
 
 	// Get priority from packet
 	uint8_t priority = pkt->readByte();
-
-	// If priority is zero use realtime values
-	if (priority == 0) {
-		// Read realtime amplitude from packet
-		uint8_t amplitude = pkt->readByte();
-		hapticDriver.enableRealtimeMode();
-		hapticDriver.setRealtimeValue(amplitude);
-
-		// Reset vibration priority
-		currVibPriority = 0;
-		return;
-	} else {
-		// Otherwise, disable realtime mode to play queued effects
-		hapticDriver.disableRealtimeMode();
-	}
 
 	// If priority is greater than current priority, stop all vibrations
 	if (priority > currVibPriority) {
 		hapticDriver.stop();
 		hapticDriver.clearQueue();
 		currVibPriority = priority;
+
+		// Disable realtime mode to play new effects
+		hapticDriver.disableRealtimeMode();
 	} else if (priority < currVibPriority) {
 		// Ignore this command if it's lower priority than current vibration
 		return;
@@ -196,6 +175,34 @@ void vibrationFeedbackHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 		// Queue the effect
 		hapticDriver.queueEffect(effectId);
 	}
+}
+
+// Vibration intensity handler
+void vibrationIntensityHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
+	resetDesktopTimeout();
+
+	// Get priority from packet
+	uint8_t priority = pkt->readByte();
+
+	// If priority is greater than current priority, update
+	if (priority > currVibPriority) {
+		// Update current vibration priority
+		currVibPriority = priority;
+	} else if (priority < currVibPriority) {
+		return;
+	}
+
+	// Read intensity value from packet (0-255)
+	int8_t intensity = pkt->readByte();
+
+	// If intensity is 0, reset priority to allow future vibrations through
+	if (intensity == 0) {
+		currVibPriority = 0;
+	}
+
+	// Set realtime mode and intensity
+	hapticDriver.enableRealtimeMode();
+	hapticDriver.setRealtimeValue(intensity);
 }
 
 float getSmoothedElevation() {
@@ -229,8 +236,8 @@ float getSmoothedElevation() {
 }
 
 uint8_t servoLookup(float elevation) {
-	// Simple linear mapping for demo purposes (0 to maxElevation maps to 0 to 180 degrees)
-	return (uint8_t) map(elevation, 0, 1, 0, 180);
+	// Simple linear mapping for demo purposes
+	return (uint8_t) (elevation * 180); // Map 0-1 elevation to 0-180 degrees
 }
 
 // Servo task - runs motor control loop at high frequency
@@ -268,13 +275,11 @@ void vEffectsTask(void* pvParameters) {
 				connectedToDesktop = false;
 				lightState.setEffect(lightIdle);
 			}
-		}
 		
-		if (connectedToDesktop) {
 			// Plays vibration effects
 			if (!hapticDriver.playQueuedEffects()) {
 				// Resets vibration priority if no effects are playing
-				if (!hapticDriver.isPlaying()) {
+				if (!hapticDriver.isRealtimeMode() && !hapticDriver.isPlaying()) {
 					currVibPriority = 0;
 				}
 			}
@@ -390,6 +395,10 @@ void setup() {
 		}
 	}
 
+	// Setup elevation servo
+	//elevationServo.attach(SERVO_PWM);
+	//elevationServo.setPWMFrequency(SERVO_PWM_FREQ);
+
 	// Setup imu
 	SPI1.setSCK(IMU_SCK);
 	SPI1.setTX(IMU_MOSI);
@@ -436,7 +445,8 @@ void setup() {
 	core->setHeaderHandler(PING, pingHandler);
 	core->setHeaderHandler(ELEVATION, elevationFeedbackHandler);
 	core->setHeaderHandler(ELEVATION_SPEED, elevationSmoothingHandler);
-	core->setHeaderHandler(VIBRATION, vibrationFeedbackHandler);
+	core->setHeaderHandler(VIBRATION_EFFECT, vibrationEffectHandler);
+	core->setHeaderHandler(VIBRATION_INTENSITY, vibrationIntensityHandler);
 
 	xTaskCreate(vCommsTask, "CommsTask", 1024, nullptr, TASK_PRIO_COMMS, &commsTaskHandle);
 	xTaskCreate(vMouseTask, "MouseTask", 2048, nullptr, TASK_PRIO_MOUSE, &mouseTaskHandle);
