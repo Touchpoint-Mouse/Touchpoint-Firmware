@@ -120,6 +120,13 @@ void resetDesktopTimeout() {
 	lastDesktopPacketMs = millis();
 }
 
+void sendPixelsPerMm() {
+	auto pixelsPerMmPacket = core->createPacket(PIXELS_PER_MM);
+	pixelsPerMmPacket.writeFloat(mouseDriver.getPointerSensitivity());
+	core->sendPacket(pixelsPerMmPacket);
+	Serial.flush();
+}
+
 // Ping handler
 void pingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	(void)pkt;
@@ -129,6 +136,9 @@ void pingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	auto response = core->createPacket(PING);
 	core->sendPacket(response);
 	Serial.flush();
+
+	// Send pixels per mm on ping to ensure desktop has correct sensitivity
+	sendPixelsPerMm();
 
 	// Mark as connected
 	connectedToDesktop = true;
@@ -320,10 +330,7 @@ void vMouseTask(void* pvParameters) {
 		const int8_t zoomChange = zoomWheel.change();
 
 		if (zoomChange != 0 && connectedToDesktop) {
-			auto pixelsPerMmPacket = core->createPacket(PIXELS_PER_MM);
-			pixelsPerMmPacket.writeFloat(mouseDriver.getPointerSensitivity());
-			core->sendPacket(pixelsPerMmPacket);
-			Serial.flush();
+			sendPixelsPerMm();
 		}
 
 		/*const uint32_t nowMs = millis();
