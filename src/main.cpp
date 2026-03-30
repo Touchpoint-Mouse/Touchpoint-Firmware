@@ -124,7 +124,6 @@ void sendPixelsPerMm() {
 	auto pixelsPerMmPacket = core->createPacket(PIXELS_PER_MM);
 	pixelsPerMmPacket.writeFloat(mouseDriver.getPointerSensitivity());
 	core->sendPacket(pixelsPerMmPacket);
-	Serial.flush();
 }
 
 // Ping handler
@@ -135,7 +134,6 @@ void pingHandler(std::shared_ptr<SongbirdCore::Packet> pkt) {
 	// Respond to ping
 	auto response = core->createPacket(PING);
 	core->sendPacket(response);
-	Serial.flush();
 
 	// Send pixels per mm on ping to ensure desktop has correct sensitivity
 	sendPixelsPerMm();
@@ -282,6 +280,7 @@ void vCommsTask(void* pvParameters) {
 
 	for (;;) {
 		uart.updateData();
+		Serial.flush();
 		vTaskDelayUntil(&lastWakeTime, TASK_PERIOD_COMMS);
 	}
 }
@@ -479,8 +478,8 @@ void setup() {
 	core->setHeaderHandler(VIBRATION_EFFECT, vibrationEffectHandler);
 	core->setHeaderHandler(VIBRATION_INTENSITY, vibrationIntensityHandler);
 
-	xTaskCreate(vCommsTask, "CommsTask", 1024, nullptr, TASK_PRIO_COMMS, &commsTaskHandle);
-	xTaskCreate(vMouseTask, "MouseTask", 2048, nullptr, TASK_PRIO_MOUSE, &mouseTaskHandle);
+	xTaskCreate(vCommsTask, "CommsTask", 4096, nullptr, TASK_PRIO_COMMS, &commsTaskHandle);
+	xTaskCreate(vMouseTask, "MouseTask", 4096, nullptr, TASK_PRIO_MOUSE, &mouseTaskHandle);
 	xTaskCreate(vServoTask, "ServoTask", 768, nullptr, TASK_PRIO_SERVO, &servoTaskHandle);
 	// xTaskCreate(vDebugTask, "DebugTask", 1024, nullptr, TASK_PRIO_DEBUG, &debugTaskHandle);
 	lightState.setEffect(lightIdle);
