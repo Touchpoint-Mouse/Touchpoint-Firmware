@@ -16,39 +16,31 @@ std::vector<uint8_t> SongbirdCore::Packet::toBytes(SongbirdCore::ProcessMode mod
     
     if (reliableMode == SongbirdCore::RELIABLE) {
         // RELIABLE mode: no seq/guaranteed bytes
-        // STREAM: [header][length][payload]
+        // STREAM: [header][payload] (COBS encoded)
         // PACKET: [header][payload]
-        size_t headerSize = (mode == SongbirdCore::STREAM) ? 2 : 1;
-        out.reserve(headerSize + payloadLength);
+        out.reserve(1 + payloadLength);
         out.push_back(header);
-        if (mode == SongbirdCore::STREAM) {
-            // Length is needed for stream framing
-            out.push_back(static_cast<uint8_t>(payloadLength));
-        }
     } else {
         // UNRELIABLE mode: includes seq/guaranteed bytes
-        // STREAM: [header][length][seq][guaranteed][payload] = 4 + payload
-        // PACKET: [header][seq][guaranteed][payload] = 3 + payload
-        size_t headerSize = (mode == SongbirdCore::STREAM) ? 4 : 3;
-        out.reserve(headerSize + payloadLength);
+        // STREAM: [header][seq][guaranteed][payload] (COBS encoded)
+        // PACKET: [header][seq][guaranteed][payload]
+        out.reserve(3 + payloadLength);
         out.push_back(header);
-        if (mode == SongbirdCore::STREAM) {
-            // Length is needed for stream framing
-            out.push_back(static_cast<uint8_t>(payloadLength));
-            // Add sequence number for guaranteed delivery
-            out.push_back(sequenceNum);
-        } else if (mode == SongbirdCore::PACKET) {
-            // In packet mode, length is implicit but sequence number is needed to preserve ordering
-            out.push_back(sequenceNum);
-        }
-
-        // Add guaranteed flag byte (0 or 1)
+        out.push_back(sequenceNum);
         out.push_back(guaranteedFlag ? 1 : 0);
     }
     
     if (!payload.empty()) {
         out.insert(out.end(), payload.begin(), payload.end());
     }
+    
+    // Apply COBS encoding in STREAM mode
+    if (mode == SongbirdCore::STREAM) {
+        std::vector<uint8_t> encoded = SongbirdCore::cobsEncode(out.data(), out.size());
+        encoded.push_back(0x00);  // Add delimiter
+        return encoded;
+    }
+    
     return out;
 }
 
@@ -172,17 +164,81 @@ int16_t SongbirdCore::Packet::readInt16() {
     return val;
 }
 
+void SongbirdCore::Packet::writeString(const std::string& str) {
+    // Write length as uint16_t (big-endian)
+    uint16_t len = static_cast<uint16_t>(str.length());
+    writeByte(static_cast<uint8_t>((len >> 8) & 0xFF));
+    writeByte(static_cast<uint8_t>(len & 0xFF));
+    // Write string bytes
+    writeBytes(reinterpret_cast<const uint8_t*>(str.c_str()), str.length());
+}
+
+std::string SongbirdCore::Packet::readString() {
+    // Read length (uint16_t, big-endian)
+    uint8_t lenBuf[2];
+    readBytes(lenBuf, 2);
+    uint16_t len = (static_cast<uint16_t>(lenBuf[0]) << 8) | static_cast<uint16_t>(lenBuf[1]);
+    
+    // Read string bytes
+    if (len == 0) return std::string();
+    
+    std::vector<uint8_t> strBuf(len);
+    readBytes(strBuf.data(), len);
+    return std::string(strBuf.begin(), strBuf.end());
+}
+
+void SongbirdCore::Packet::writeProtobuf(const uint8_t* buffer, std::size_t length) {
+    // Write length as uint16_t (big-endian)
+    uint16_t len = static_cast<uint16_t>(length);
+    writeByte(static_cast<uint8_t>((len >> 8) & 0xFF));
+    writeByte(static_cast<uint8_t>(len & 0xFF));
+    // Write protobuf bytes
+    writeBytes(buffer, length);
+}
+
+void SongbirdCore::Packet::writeProtobuf(const std::vector<uint8_t>& data) {
+    writeProtobuf(data.data(), data.size());
+}
+
+std::vector<uint8_t> SongbirdCore::Packet::readProtobuf() {
+    // Read length (uint16_t, big-endian)
+    uint8_t lenBuf[2];
+    readBytes(lenBuf, 2);
+    uint16_t len = (static_cast<uint16_t>(lenBuf[0]) << 8) | static_cast<uint16_t>(lenBuf[1]);
+    
+    // Read protobuf bytes
+    if (len == 0) return std::vector<uint8_t>();
+    
+    std::vector<uint8_t> data(len);
+    readBytes(data.data(), len);
+    return data;
+}
+
 // SongbirdCore implementation
 
 SongbirdCore::SongbirdCore(std::string name, SongbirdCore::ProcessMode mode, SongbirdCore::ReliableMode reliableMode)
     : self(this), name(std::move(name)), processMode(mode), reliableMode(reliableMode), nextSeqNum(0), missingPacketTimeoutMs(50), retransmitTimeoutMs(50), maxRetransmitAttempts(5)
 {
-    // initialize spinlocks
-    dataSpinlock = portMUX_INITIALIZER_UNLOCKED;
+    // Initialize spinlock based on platform
+    #if defined(ESP32)
+        // Create FreeRTOS mutex semaphore
+        dataSpinlock = xSemaphoreCreateMutex();
+    #elif defined(PICO_SDK)
+        critical_section_init(&dataSpinlock);
+    #else
+        dataSpinlock = 0;
+    #endif
 }
 
 SongbirdCore::~SongbirdCore() {
     flush();
+    
+    // Cleanup spinlock based on platform
+    #if defined(ESP32)
+        if (dataSpinlock) vSemaphoreDelete(dataSpinlock);
+    #elif defined(PICO_SDK)
+        critical_section_deinit(&dataSpinlock);
+    #endif
 }
 
 void SongbirdCore::attachStream(IStream* stream) {
@@ -237,6 +293,9 @@ std::shared_ptr<SongbirdCore::Packet> SongbirdCore::waitForHeader(uint8_t header
 
     unsigned long start = millis();
     while ((millis() - start) < timeoutMs) {
+        // Poll for new data
+        if (stream) stream->updateData();
+        
         {
             SpinLockGuard guard(dataSpinlock);
             auto it = headerMap.find(header);
@@ -246,7 +305,7 @@ std::shared_ptr<SongbirdCore::Packet> SongbirdCore::waitForHeader(uint8_t header
                 return pkt;
             }
         }
-        vTaskDelay(1);
+        delay(1);
     }
     return nullptr;
 }
@@ -266,6 +325,9 @@ std::shared_ptr<SongbirdCore::Packet> SongbirdCore::waitForRemote(IPAddress remo
 
     unsigned long start = millis();
     while ((millis() - start) < timeoutMs) {
+        // Poll for new data
+        if (stream) stream->updateData();
+        
         {
             SpinLockGuard guard(dataSpinlock);
             auto it = remoteMap.find(remote);
@@ -275,7 +337,7 @@ std::shared_ptr<SongbirdCore::Packet> SongbirdCore::waitForRemote(IPAddress remo
                 return pkt;
             }
         }
-        vTaskDelay(1);
+        delay(1);
     }
     return nullptr;
 }
@@ -311,7 +373,8 @@ void SongbirdCore::setAllowOutofOrder(bool allow) {
 }
 
 void SongbirdCore::sendPacket(Packet& packet, bool guaranteeDelivery) {
-    sendPacket(packet, nextSeqNum.fetch_add(1), guaranteeDelivery);
+    uint8_t seqNum = nextSeqNum++;
+    sendPacket(packet, seqNum, guaranteeDelivery);
 }
 void SongbirdCore::sendPacket(Packet& packet, uint8_t sequenceNum, bool guaranteeDelivery) {
     if (!stream || !stream->isOpen()) {
@@ -337,7 +400,7 @@ void SongbirdCore::sendPacket(Packet& packet, uint8_t sequenceNum, bool guarante
         stream->write(bytes.data(), bytes.size());
     }
 
-    // Track guaranteed packets and start retransmit timer (UNRELIABLE mode only)
+    // Track guaranteed packets and record send time (UNRELIABLE mode only)
     if (guaranteeDelivery && reliableMode == UNRELIABLE) {
         Remote remote = packet.getRemote();
         // If packet doesn't have a valid remote, use the stream's default remote
@@ -350,13 +413,11 @@ void SongbirdCore::sendPacket(Packet& packet, uint8_t sequenceNum, bool guarante
                 packet.setRemote(remote);
             }
         }
-        RemoteExpected remoteExpected{remote, sequenceNum};
-        OutgoingInfo info{std::make_shared<Packet>(packet), remote, nullptr, 0};
+        OutgoingInfo info{std::make_shared<Packet>(packet), remote, micros(), 0};
         {
             SpinLockGuard guard(dataSpinlock);
             outgoingGuaranteed[sequenceNum] = info;
         }
-        startRetransmitTimer(sequenceNum);
     }
 }
 
@@ -415,9 +476,9 @@ void SongbirdCore::parseData(const uint8_t* data, std::size_t length, IPAddress 
     } else if (processMode == STREAM) {
         // Adds data to readBuffer
         appendToReadBuffer(data, length);
-        // Process complete or incomplete packets in readBuffer
+        // Process COBS-encoded packets in readBuffer
         while (true) {
-            std::shared_ptr<Packet> pkt = packetFromStream();
+            std::shared_ptr<Packet> pkt = packetFromStreamCOBS();
             if (!pkt) {
                 if (millis() - lastDataTimeMs > missingPacketTimeoutMs) {
                     // Timeout: clear read buffer to avoid stale data
@@ -475,52 +536,114 @@ std::shared_ptr<SongbirdCore::Packet> SongbirdCore::packetFromData(const uint8_t
     return pkt;
 }
 
-std::shared_ptr<SongbirdCore::Packet> SongbirdCore::packetFromStream() {
+std::shared_ptr<SongbirdCore::Packet> SongbirdCore::packetFromStreamCOBS() {
     SpinLockGuard guard(dataSpinlock);
     std::shared_ptr<SongbirdCore::Packet> pkt;
     
+    // Look for 0x00 delimiter
+    auto it = std::find(readBuffer.begin(), readBuffer.end(), 0x00);
+    if (it == readBuffer.end()) {
+        // No complete packet yet
+        return pkt;
+    }
+    
+    std::size_t delimiter_idx = std::distance(readBuffer.begin(), it);
+    
+    // Extract and decode COBS packet
+    if (delimiter_idx == 0) {
+        // Empty packet, skip delimiter
+        readBuffer.erase(readBuffer.begin());
+        return pkt;
+    }
+    
+    std::vector<uint8_t> decoded = cobsDecode(readBuffer.data(), delimiter_idx);
+    readBuffer.erase(readBuffer.begin(), readBuffer.begin() + delimiter_idx + 1); // Remove packet + delimiter
+    
+    if (decoded.empty()) {
+        return pkt;
+    }
+    
+    // Parse decoded packet
     if (reliableMode == RELIABLE) {
-        // RELIABLE mode: [header][length][payload]
-        if (newPacket) {
-            if (readBuffer.size() < 2) return pkt; // need at least header and length
-            newPacket = false;
-        }
-        // Do we have the full payload?
-        uint8_t currPayloadLen = readBuffer[1];
-        if (readBuffer.size() < 2 + static_cast<std::size_t>(currPayloadLen)) return pkt;
-        newPacket = true;
-        // we have a full packet in readBuffer; construct it
-        uint8_t currHeader = readBuffer[0];
+        // RELIABLE: [header][payload]
+        if (decoded.size() < 1) return pkt;
+        uint8_t currHeader = decoded[0];
         std::vector<uint8_t> payload;
-        payload.insert(payload.end(), readBuffer.begin() + 2, readBuffer.begin() + 2 + currPayloadLen);
+        if (decoded.size() > 1) {
+            payload.insert(payload.end(), decoded.begin() + 1, decoded.end());
+        }
         pkt = std::make_shared<Packet>(currHeader, payload);
-        // erase consumed bytes
-        readBuffer.erase(readBuffer.begin(), readBuffer.begin() + 2 + currPayloadLen);
     } else {
-        // UNRELIABLE mode: [header][length][seq][guaranteed][payload]
-        if (newPacket) {
-            if (readBuffer.size() < 4) return pkt; // need at least header, len, seq, guaranteed flag
-            newPacket = false;
-        }
-        // Do we have the full payload?
-        uint8_t currPayloadLen = readBuffer[1];
-        if (readBuffer.size() < 4 + static_cast<std::size_t>(currPayloadLen)) return pkt;
-        newPacket = true;
-        // we have a full packet in readBuffer; construct it
-        uint8_t currHeader = readBuffer[0];
-        uint8_t currSeqNum = readBuffer[2];
-        uint8_t guaranteed = readBuffer[3];
-
+        // UNRELIABLE: [header][seq][guaranteed][payload]
+        if (decoded.size() < 3) return pkt;
+        uint8_t currHeader = decoded[0];
+        uint8_t currSeqNum = decoded[1];
+        uint8_t guaranteed = decoded[2];
         std::vector<uint8_t> payload;
-        payload.insert(payload.end(), readBuffer.begin() + 4, readBuffer.begin() + 4 + currPayloadLen);
+        if (decoded.size() > 3) {
+            payload.insert(payload.end(), decoded.begin() + 3, decoded.end());
+        }
         pkt = std::make_shared<Packet>(currHeader, payload);
         pkt->setSequenceNum(currSeqNum);
         if (guaranteed) pkt->setGuaranteed();
-
-        // erase consumed bytes
-        readBuffer.erase(readBuffer.begin(), readBuffer.begin() + 4 + currPayloadLen);
     }
+    
     return pkt;
+}
+
+std::vector<uint8_t> SongbirdCore::cobsEncode(const uint8_t* data, std::size_t length) {
+    if (length == 0) return std::vector<uint8_t>();
+    
+    std::vector<uint8_t> encoded;
+    encoded.reserve(length + (length / 254) + 1);
+    
+    std::size_t code_idx = 0;
+    uint8_t code = 0x01;
+    
+    encoded.push_back(0); // Placeholder for first code
+    
+    for (std::size_t i = 0; i < length; i++) {
+        if (data[i] == 0x00) {
+            encoded[code_idx] = code;
+            code_idx = encoded.size();
+            encoded.push_back(0); // Placeholder for next code
+            code = 0x01;
+        } else {
+            encoded.push_back(data[i]);
+            code++;
+            if (code == 0xFF) {
+                encoded[code_idx] = code;
+                code_idx = encoded.size();
+                encoded.push_back(0); // Placeholder for next code
+                code = 0x01;
+            }
+        }
+    }
+    
+    encoded[code_idx] = code;
+    return encoded;
+}
+
+std::vector<uint8_t> SongbirdCore::cobsDecode(const uint8_t* data, std::size_t length) {
+    if (length == 0) return std::vector<uint8_t>();
+    
+    std::vector<uint8_t> decoded;
+    decoded.reserve(length);
+    
+    std::size_t i = 0;
+    while (i < length) {
+        uint8_t code = data[i++];
+        
+        for (uint8_t j = 1; j < code && i < length; j++) {
+            decoded.push_back(data[i++]);
+        }
+        
+        if (code < 0xFF && i < length) {
+            decoded.push_back(0x00);
+        }
+    }
+    
+    return decoded;
 }
 
 void SongbirdCore::callHandlers(std::shared_ptr<Packet> pkt) {
@@ -554,8 +677,6 @@ void SongbirdCore::callHandlers(std::shared_ptr<Packet> pkt) {
 std::vector<std::shared_ptr<SongbirdCore::Packet>> SongbirdCore::reorderPackets()
 {
     std::vector<std::shared_ptr<Packet>> dispatch;
-    std::vector<std::pair<Remote, RemoteOrder>> needTimers;
-    std::vector<TimerHandle_t> timersToStop;
     
     {
         SpinLockGuard guard(dataSpinlock);
@@ -566,40 +687,15 @@ std::vector<std::shared_ptr<SongbirdCore::Packet>> SongbirdCore::reorderPackets(
             Remote r = itOrder->first;
             RemoteOrder& order = itOrder->second;
 
-            auto remotePackets = reorderRemote(r, order, timersToStop);
+            auto remotePackets = reorderRemote(r, order);
             dispatch.insert(dispatch.end(), remotePackets.begin(), remotePackets.end());
-            
-            // Check if this remote needs a timer started
-            if (order.needsTimerStart) {
-                needTimers.push_back({r, order});
-                order.needsTimerStart = false;
-            }
-        }
-    }
-    
-    // Stop timers OUTSIDE the spinlock
-    for (auto timer : timersToStop) {
-        if (timer) {
-            xTimerStop(timer, 0);
-        }
-    }
-    
-    // Start timers OUTSIDE the spinlock
-    for (auto& pair : needTimers) {
-        TimerHandle_t newTimer = startMissingTimer(pair.second);
-        // Update the timer handle back in the map
-        SpinLockGuard guard(dataSpinlock);
-        auto it = remoteOrders.find(pair.first);
-        if (it != remoteOrders.end()) {
-            it->second.missingTimer = newTimer;
-            it->second.missingTimerActive = true;
         }
     }
 
     return dispatch;
 }
 
-std::vector<std::shared_ptr<SongbirdCore::Packet>> SongbirdCore::reorderRemote(const SongbirdCore::Remote r, SongbirdCore::RemoteOrder& order, std::vector<TimerHandle_t>& timersToStop) {
+std::vector<std::shared_ptr<SongbirdCore::Packet>> SongbirdCore::reorderRemote(const SongbirdCore::Remote r, SongbirdCore::RemoteOrder& order) {
     std::vector<std::shared_ptr<SongbirdCore::Packet>> dispatch;
     while (true)
     {
@@ -613,20 +709,18 @@ std::vector<std::shared_ptr<SongbirdCore::Packet>> SongbirdCore::reorderRemote(c
             incomingPackets.erase(itPkt);
             order.expectedSeqNum++;
             if (order.missingTimerActive) {
-                // Add timer to stop list instead of stopping directly
-                timersToStop.push_back(order.missingTimer);
+                // Stop missing timer
                 order.missingTimerActive = false;
             }
             continue;
         }
 
-        unsigned long nowMs = millis();
-
-        // No packets with correct sequence, starting timeout
+        // No packets with correct sequence, start timeout if not already active
         if (!order.missingTimerActive)
         {
-            // Set flag instead of calling timer functions directly (called from spinlock context)
-            order.needsTimerStart = true;
+            // Record start time for missing packet timeout
+            order.missingTimerStartMicros = micros();
+            order.missingTimerActive = true;
             break;
         }
 
@@ -635,42 +729,8 @@ std::vector<std::shared_ptr<SongbirdCore::Packet>> SongbirdCore::reorderRemote(c
     return dispatch;
 }
 
-TimerHandle_t SongbirdCore::startMissingTimer(RemoteOrder& order)
-{
-    // If timer already exists, just reset it to restart the period
-    if (order.missingTimer) {
-        xTimerReset(order.missingTimer, 0);
-    } else {
-        // Create new timer on first use
-        // Allocate TimeoutID dynamically to ensure it remains valid for timer lifetime
-        auto *id = static_cast<TimeoutID*>(pvPortMalloc(sizeof(TimeoutID)));
-        id->owner = order.timeoutID.owner;
-        id->remote = order.timeoutID.remote;
-        
-        TimerHandle_t handle = xTimerCreate(
-            "missingTimer",
-            pdMS_TO_TICKS(missingPacketTimeoutMs),
-            pdFALSE, // one-shot
-            (void *) id,
-            missingTimerCallback
-        );
-        
-        // Start the timer
-        xTimerStart(handle, 0);
-        order.missingTimer = handle;
-    }
-    
-    // Mark timer as active
-    order.missingTimerActive = true;
-    
-    return order.missingTimer;
-}
-
 void SongbirdCore::onMissingTimeout(const Remote remote) {
     std::vector<std::shared_ptr<Packet>> dispatch;
-    std::vector<TimerHandle_t> timersToStop;
-    TimerHandle_t timerToDelete = nullptr;
-    bool needsReorder = false;
     
     {
         SpinLockGuard guard(dataSpinlock);
@@ -701,132 +761,50 @@ void SongbirdCore::onMissingTimeout(const Remote remote) {
 
         if (found)
         {
+            // Advance expectedSeqNum to the next available
             order.expectedSeqNum = bestSeq;
+            // Stop missing timer and trigger reorder
             order.missingTimerActive = false;
-            needsReorder = true;
         } else {
-            // No packets for this remote — delete it safely
-            // Mark timer for deletion outside the lock
-            if (order.missingTimer) {
-                timerToDelete = order.missingTimer;
-            }
-            remoteOrders.erase(it);
-            remoteMap.erase(remote);
+            // No packets available; just mark timer inactive
+            order.missingTimerActive = false;
         }
     }
-    
-    // Handle reordering outside the spinlock
-    if (needsReorder) {
-        SpinLockGuard guard(dataSpinlock);
-        auto it = remoteOrders.find(remote);
-        if (it != remoteOrders.end()) {
-            dispatch = reorderRemote(remote, it->second, timersToStop);
-        }
-    }
-    
-    // Stop/delete timers OUTSIDE the spinlock
-    for (auto timer : timersToStop) {
-        if (timer) {
-            xTimerStop(timer, 0);
-        }
-    }
-    
-    if (timerToDelete) {
-        xTimerStop(timerToDelete, 0);
-        // Free the TimeoutID allocated when timer was created
-        auto *id = static_cast<TimeoutID*>(pvTimerGetTimerID(timerToDelete));
-        vPortFree(id);
-        xTimerDelete(timerToDelete, 0);
-    }
 
-    // Call handlers on dispatched packets
-    for (auto& p : dispatch) {
-        callHandlers(p);
+    // Reorder packets now that we've advanced the sequence
+    auto reordered = reorderPackets();
+    for (auto& pkt : reordered) {
+        callHandlers(pkt);
     }
-}
-
-void missingTimerCallback (TimerHandle_t xTimer) {
-    // Retrieve the SongbirdCore + Remote key
-    auto *ctx = static_cast<SongbirdCore::TimeoutID*>(pvTimerGetTimerID(xTimer));
-
-    // Mark that this remote timed out
-    ctx->owner->onMissingTimeout(ctx->remote);
 }
 
 void SongbirdCore::updateRemoteOrder(std::shared_ptr<Packet> pkt) {
     Remote remote = pkt->getRemote();
     uint8_t seqNum = pkt->getSequenceNum();
-    bool needsTimerStart = false;
-    TimerHandle_t existingTimer = nullptr;
-    TimeoutID timerContext;
     
-    {
-        SpinLockGuard guard(dataSpinlock);
-        auto it = remoteOrders.find(remote);
-        if (it == remoteOrders.end()) {
-            // First packet from this remote - initialize expectedSeqNum
-            TimeoutID id{this, remote};
-            RemoteOrder order = {seqNum, id};
-            remoteOrders[remote] = order;
-            it = remoteOrders.find(remote);
-            
-            // In ordering mode, we expect the next packet after this one
-            // In allowOutOfOrder mode, same thing (for repeat detection)
-            if (!allowOutofOrder) {
-                // In ordering mode, start from this sequence number
-                it->second.expectedSeqNum = seqNum;
-            } else {
-                // In allowOutOfOrder mode, expect the next sequence after this one
-                it->second.expectedSeqNum = seqNum + 1;
-                // Start timer for inactive remote cleanup
-                needsTimerStart = true;
-                timerContext = it->second.timeoutID;
-            }
-        } else {
-            // Remote order already exists
-            // Only update expectedSeqNum in allowOutOfOrder mode (for repeat detection)
-            // In ordering mode, expectedSeqNum is managed by reorderRemote
-            if (allowOutofOrder) {
-                it->second.expectedSeqNum = seqNum + 1;
-                // Restart timer to keep remote active
-                existingTimer = it->second.missingTimer;
-                needsTimerStart = true;
-                timerContext = it->second.timeoutID;
-            }
-        }
-    }
-    
-    // Start/restart timer OUTSIDE the spinlock
-    if (needsTimerStart) {
-        TimerHandle_t timer = nullptr;
+    SpinLockGuard guard(dataSpinlock);
+    auto it = remoteOrders.find(remote);
+    if (it == remoteOrders.end()) {
+        // First packet from this remote - initialize expectedSeqNum
+        RemoteOrder order = {seqNum, 0, false};
+        remoteOrders[remote] = order;
+        it = remoteOrders.find(remote);
         
-        if (existingTimer) {
-            // Reset existing timer
-            xTimerReset(existingTimer, 0);
-            timer = existingTimer;
+        // In ordering mode, we expect the next packet after this one
+        // In allowOutOfOrder mode, same thing (for repeat detection)
+        if (!allowOutofOrder) {
+            // In ordering mode, start from this sequence number
+            it->second.expectedSeqNum = seqNum;
         } else {
-            // Create new timer
-            auto *id = static_cast<TimeoutID*>(pvPortMalloc(sizeof(TimeoutID)));
-            id->owner = timerContext.owner;
-            id->remote = timerContext.remote;
-            
-            timer = xTimerCreate(
-                "missingTimer",
-                pdMS_TO_TICKS(missingPacketTimeoutMs),
-                pdFALSE, // one-shot
-                (void *) id,
-                missingTimerCallback
-            );
-            
-            xTimerStart(timer, 0);
+            // In allowOutOfOrder mode, expect the next sequence after this one
+            it->second.expectedSeqNum = seqNum + 1;
         }
-        
-        // Update the timer handle back in the map
-        SpinLockGuard guard(dataSpinlock);
-        auto it = remoteOrders.find(remote);
-        if (it != remoteOrders.end()) {
-            it->second.missingTimer = timer;
-            it->second.missingTimerActive = true;
+    } else {
+        // Remote order already exists
+        // Only update expectedSeqNum in allowOutOfOrder mode (for repeat detection)
+        // In ordering mode, expectedSeqNum is managed by reorderRemote
+        if (allowOutofOrder) {
+            it->second.expectedSeqNum = seqNum + 1;
         }
     }
 }
@@ -885,36 +863,16 @@ bool SongbirdCore::checkForAck(std::shared_ptr<Packet> pkt) {
 }
 
 void SongbirdCore::removeAcknowledgedPacket(uint8_t seqNum) {
-    TimerHandle_t timerToStop = nullptr;
-    void* timerID = nullptr;
-    
-    {
-        SpinLockGuard guard(dataSpinlock);
-        auto it = outgoingGuaranteed.find(seqNum);
-        if (it != outgoingGuaranteed.end()) {
-            if (it->second.timer) {
-                timerToStop = it->second.timer;
-                timerID = pvTimerGetTimerID(timerToStop);
-            }
-            outgoingGuaranteed.erase(it);
-        }
-    }
-    
-    // Stop and delete timer OUTSIDE the spinlock
-    if (timerToStop) {
-        xTimerStop(timerToStop, 0);
-        if (timerID) {
-            vPortFree(timerID);
-        }
-        xTimerDelete(timerToStop, 0);
+    SpinLockGuard guard(dataSpinlock);
+    auto it = outgoingGuaranteed.find(seqNum);
+    if (it != outgoingGuaranteed.end()) {
+        outgoingGuaranteed.erase(it);
     }
 }
 
 void SongbirdCore::onRetransmitTimeout(uint8_t seqNum) {
     bool needsResend = false;
     OutgoingInfo info;
-    TimerHandle_t timerToCleanup = nullptr;
-    void* timerID = nullptr;
     
     {
         SpinLockGuard guard(dataSpinlock);
@@ -925,36 +883,19 @@ void SongbirdCore::onRetransmitTimeout(uint8_t seqNum) {
             // Check if we've exceeded max retransmit attempts (0 = infinite)
             if (maxRetransmitAttempts > 0 && info.retransmitCount >= maxRetransmitAttempts) {
                 // Max attempts reached, clean up and stop retransmitting
-                if (info.timer) {
-                    timerToCleanup = info.timer;
-                    timerID = pvTimerGetTimerID(info.timer);
-                }
                 outgoingGuaranteed.erase(it);
             } else {
-                // Increment retransmit counter
+                // Increment retransmit counter and update send time
                 it->second.retransmitCount++;
+                it->second.sendTimeMicros = micros();
                 needsResend = true;
             }
         }
     }
     
-    // Clean up timer OUTSIDE the spinlock
-    if (timerToCleanup) {
-        xTimerStop(timerToCleanup, 0);
-        if (timerID) {
-            vPortFree(timerID);
-        }
-        xTimerDelete(timerToCleanup, 0);
-        return;
-    }
-    
     if (needsResend) {
         // Resend packet
         sendPacket(*info.pkt.get(), info.pkt->getSequenceNum(), false);
-        // Restart the existing timer (don't create a new one)
-        if (info.timer) {
-            xTimerReset(info.timer, 0);
-        }
     }
 }
 
@@ -984,32 +925,49 @@ void SongbirdCore::appendToReadBuffer(const uint8_t* data, std::size_t length) {
     readBuffer.insert(readBuffer.end(), data, data + length);
 }
 
-// Retransmit timer callback
-static void retransmitTimerCallback(TimerHandle_t xTimer) {
-    auto *ctx = static_cast<SongbirdCore::RetransmitID*>(pvTimerGetTimerID(xTimer));
-    ctx->owner->onRetransmitTimeout(ctx->seq);
-}
-
-TimerHandle_t SongbirdCore::startRetransmitTimer(uint8_t seqNum) {
-    // Prepare timer context
-    auto *id = static_cast<RetransmitID*>(pvPortMalloc(sizeof(RetransmitID)));
-    id->owner = this;
-    id->seq = seqNum;
-    TimerHandle_t handle = xTimerCreate(
-        "retransmitTimer",
-        pdMS_TO_TICKS(retransmitTimeoutMs),
-        pdFALSE,
-        (void*)id,
-        retransmitTimerCallback
-    );
-    // Start the timer (no need for stop/change period on a freshly created timer)
-    xTimerStart(handle, 0);
+void SongbirdCore::update() {
+    uint32_t currentMicros = micros();
+    std::vector<Remote> expiredMissingRemotes;
+    std::vector<uint8_t> expiredRetransmitSeqs;
+    
     {
         SpinLockGuard guard(dataSpinlock);
-        auto it = outgoingGuaranteed.find(seqNum);
-        if (it != outgoingGuaranteed.end()) {
-            it->second.timer = handle;
+        
+        // Check for missing packet timeouts
+        for (auto& it : remoteOrders) {
+            const Remote& remote = it.first;
+            RemoteOrder& order = it.second;
+            
+            if (order.missingTimerActive) {
+                uint32_t elapsedMicros = currentMicros - order.missingTimerStartMicros;
+                uint32_t timeoutMicros = missingPacketTimeoutMs * 1000;
+                
+                if (elapsedMicros >= timeoutMicros) {
+                    expiredMissingRemotes.push_back(remote);
+                }
+            }
+        }
+        
+        // Check for retransmit timeouts
+        for (auto& it : outgoingGuaranteed) {
+            uint8_t seqNum = it.first;
+            OutgoingInfo& info = it.second;
+            
+            uint32_t elapsedMicros = currentMicros - info.sendTimeMicros;
+            uint32_t timeoutMicros = retransmitTimeoutMs * 1000;
+            
+            if (elapsedMicros >= timeoutMicros) {
+                expiredRetransmitSeqs.push_back(seqNum);
+            }
         }
     }
-    return handle;
+    
+    // Handle expired timeouts outside the lock
+    for (const Remote& remote : expiredMissingRemotes) {
+        onMissingTimeout(remote);
+    }
+    
+    for (uint8_t seqNum : expiredRetransmitSeqs) {
+        onRetransmitTimeout(seqNum);
+    }
 }

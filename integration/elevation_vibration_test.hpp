@@ -24,7 +24,6 @@ float maxElevationSpeed = 0.f; // units per second (0 = no smoothing)
 uint64_t lastElevationTime = 0;
 
 // RTOS Task Handles
-TaskHandle_t pingTaskHandle = NULL;
 TaskHandle_t mouseTaskHandle = NULL;
 TaskHandle_t updateTaskHandle = NULL;
 TaskHandle_t focTaskHandle = NULL;

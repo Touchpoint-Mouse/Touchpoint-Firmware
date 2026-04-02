@@ -18,12 +18,15 @@ void SongbirdUART::updateData() {
     // Reads any available data from serial stream
     std::size_t toRead = Serial.available();
     if (Serial && toRead > 0) {
-            std::vector<uint8_t> buffer(toRead);
-            std::size_t bytesRead = Serial.readBytes(buffer.data(), toRead);
-            if (bytesRead > 0) {
-                protocol->parseData(buffer.data(), bytesRead);
-            }
+        std::vector<uint8_t> buffer(toRead);
+        std::size_t bytesRead = Serial.readBytes(buffer.data(), toRead);
+        if (bytesRead > 0) {
+            protocol->parseData(buffer.data(), bytesRead);
+        }
     }
+    
+    // Update protocol timers (check for timeouts)
+    protocol->update();
 }
 
 void SongbirdUART::close() {

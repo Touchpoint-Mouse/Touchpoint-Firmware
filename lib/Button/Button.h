@@ -8,10 +8,15 @@
 
 #include "Arduino.h"
 
+enum class PullMode {
+	NONE = 0,
+	PULLUP = 1
+};
+
 class Button {
 	private:
 		//Button input pin
-		int pin;
+		int pin = -1;
 		
 		//Debounce time
 		int debounce = 3;
@@ -29,7 +34,7 @@ class Button {
 		bool fallback = LOW;
 
 		//Pullup/pulldown state
-		bool pullup = false;
+		PullMode pullMode = PullMode::NONE;
 
 		//Current debounce start time
 		int bounceStart;
@@ -43,10 +48,11 @@ class Button {
 		void updatePulse();
 
 	public:
-    	Button(int _pin);
-		Button(int _pin, bool _pullup);    
-		Button(int _pin, int _debounce, bool _pullup=false);
+		Button();
+		Button(int _debounce);
+		Button(int _debounce, PullMode _pullMode);
 
+		void attach(int _pin);
 		void update();
 
 		bool state();

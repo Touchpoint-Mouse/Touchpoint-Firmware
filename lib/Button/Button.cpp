@@ -7,25 +7,32 @@
 #include "Arduino.h"
 #include "Button.h"
 
-Button::Button(int _pin) {
-	//Sets button input
-	pin = _pin;
-	pinMode(pin, INPUT);
-
+Button::Button() {
 	//Sets debounce and pulse start times
 	bounceStart = millis();
 	pulseStart = millis();
 	prevStart = millis();
 }
 
-Button::Button(int _pin, bool _pullup) : Button(_pin) {
-	//Sets pullup/pulldown state
-	pullup = _pullup;
-}
-
-Button::Button(int _pin, int _debounce, bool _pullup): Button(_pin, _pullup) {
+Button::Button(int _debounce) : Button() {
 	//Sets debounce length
 	debounce = _debounce;
+}
+
+Button::Button(int _debounce, PullMode _pullMode) : Button(_debounce) {
+	//Sets pullup/pulldown state
+	pullMode = _pullMode;
+}
+
+void Button::attach(int _pin) {
+	//Sets button input
+	pin = _pin;
+
+	//Read initial state to avoid false triggers on startup
+	rawstate = (digitalRead(pin) != (pullMode == PullMode::PULLUP));
+	prevstate = rawstate;
+	bouncestate = rawstate;
+	fallback = rawstate;
 }
 
 void Button::update() {
@@ -45,7 +52,7 @@ void Button::update() {
 	prevstate = rawstate;
 
 	//Updates current state (negates if pullup)
-	rawstate = (digitalRead(pin) != pullup);
+	rawstate = (digitalRead(pin) != (pullMode == PullMode::PULLUP));
 
 	//Updates debounced state
 
