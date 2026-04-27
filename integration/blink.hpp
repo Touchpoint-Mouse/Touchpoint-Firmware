@@ -1,5 +1,5 @@
-#ifndef BLINCK_HPP
-#define BLINCK_HPP
+#ifndef BLINK_HPP
+#define BLINK_HPP
 
 #include <Arduino.h>
 
@@ -14,4 +14,4 @@ void loop() {
     delay(1000); // Wait for 1 second
 }
 
-#endif // BLINCK_HPP
+#endif // BLINK_HPP

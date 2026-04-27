@@ -480,7 +480,7 @@ void setup() {
 
 	xTaskCreate(vCommsTask, "CommsTask", 4096, nullptr, TASK_PRIO_COMMS, &commsTaskHandle);
 	xTaskCreate(vMouseTask, "MouseTask", 4096, nullptr, TASK_PRIO_MOUSE, &mouseTaskHandle);
-	xTaskCreate(vServoTask, "ServoTask", 768, nullptr, TASK_PRIO_SERVO, &servoTaskHandle);
+	xTaskCreate(vServoTask, "ServoTask", 4096, nullptr, TASK_PRIO_SERVO, &servoTaskHandle);
 	// xTaskCreate(vDebugTask, "DebugTask", 1024, nullptr, TASK_PRIO_DEBUG, &debugTaskHandle);
 	lightState.setEffect(lightIdle);
 }
