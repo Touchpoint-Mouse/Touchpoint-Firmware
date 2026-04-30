@@ -245,8 +245,11 @@ float MouseDriver::getPointerSensitivity() const {
 
 	int8_t zoomLevel = static_cast<int8_t>(zoomWheel.netSteps());
 
-	float zoomFactor = 1.0f + (zoomLevel * zoomRange / zoomResolution);
-	return basePointerSensitivity * zoomFactor;
+	// Map integer zoom steps to a logarithmic (base-2) multiplier.
+	// Each step doubles (positive) or halves (negative) the sensitivity.
+	// Example: zoomLevel = -3 -> 2^-3 = 0.125, zoomLevel = 0 -> 1.0, zoomLevel = 3 -> 8.0
+	const float zoomMultiplier = powf(2.0f, static_cast<float>(zoomLevel));
+	return basePointerSensitivity * zoomMultiplier;
 }
 
 void MouseDriver::applyOpticalRotation(const Vector2f& in, Vector2f& out) const {
