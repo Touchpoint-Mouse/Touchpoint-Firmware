@@ -4,13 +4,13 @@
 #include <Arduino.h>
 
 void setup() {
-    pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(25, OUTPUT);
 }
 
 void loop() {
-    digitalWrite(LED_BUILTIN, HIGH); // Turn the LED on
+    digitalWrite(25, HIGH); // Turn the LED on
     delay(1000); // Wait for 1 second
-    digitalWrite(LED_BUILTIN, LOW); // Turn the LED off
+    digitalWrite(25, LOW); // Turn the LED off
     delay(1000); // Wait for 1 second
 }
 

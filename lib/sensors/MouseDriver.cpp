@@ -1,11 +1,10 @@
 #include "MouseDriver.h"
-#include <Adafruit_TinyUSB.h>
 #include <math.h>
 
 #ifndef ZOOM_TRACE_DEBUG
 #define ZOOM_TRACE_DEBUG 1
 #endif
-
+/*
 namespace {
 	constexpr uint8_t kMouseButtonLeft = 0x01;
 	constexpr uint8_t kMouseButtonRight = 0x02;
@@ -414,3 +413,4 @@ void MouseDriver::updatePointerState() {
 	pointerErrorMm.x() -= stepX * stepToMm;
 	pointerErrorMm.y() -= stepY * stepToMm;
 }
+*/
