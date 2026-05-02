@@ -157,21 +157,13 @@ void MouseDriver::setPointerSensitivity(float sensitivity) {
 	}
 }
 
-void MouseDriver::setZoomResolution(uint8_t resolution) {
+void MouseDriver::setzoomRange(uint8_t resolution) {
 	if (resolution == 0) {
 		return;
 	}
 
-	zoomResolution = resolution;
+	zoomRange = resolution;
 	zoomWheel.setBounds(-resolution, resolution);
-}
-
-void MouseDriver::setZoomRange(float range) {
-	if (range < 0.0f) {
-		return;
-	}
-
-	zoomRange = range;
 }
 
 void MouseDriver::setPointerOffset(Vector2f offset) {
@@ -238,7 +230,7 @@ int8_t MouseDriver::clampToHid(int32_t value) const {
 }
 
 float MouseDriver::getPointerSensitivity() const {
-	if (zoomResolution == 0) {
+	if (zoomRange == 0) {
 		return basePointerSensitivity;
 	}
 

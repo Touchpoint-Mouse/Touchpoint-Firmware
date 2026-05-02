@@ -42,8 +42,7 @@ public:
     SensorReadings getSensorReadings() const;
     bool setCPI(uint16_t cpi);
     void setPointerSensitivity(float sensitivity);
-    void setZoomResolution(uint8_t resolution);
-    void setZoomRange(float range);
+    void setzoomRange(uint8_t resolution);
     float getPointerSensitivity() const;
     void setPointerOffset(Vector2f offset);
     void setHeadlessModeEnabled(bool enabled);
@@ -70,8 +69,7 @@ private:
     bool hasPointerOffsetProxy = false;
 
     float basePointerSensitivity = 1.0f;
-    uint8_t zoomResolution = 2;
-    float zoomRange = 0.5f;
+    uint8_t zoomRange = 2;
     bool headlessModeEnabled = true;
     OpticalRotation opticalRotation = OpticalRotation::Deg0;
     SensorReadings sensorReadings;

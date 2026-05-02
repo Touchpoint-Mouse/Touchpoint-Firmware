@@ -13,26 +13,28 @@ Tests buttons and scroll wheel inputs by printing their states to the serial mon
 // Initialize buttons and rotary encoder with appropriate pins
 Button leftButton(3, PullMode::PULLUP); // Left mouse button with debounce of 3ms
 Button rightButton(3, PullMode::PULLUP); // Right mouse button with debounce of 3ms
+Button zoomWheelSwitch(3, PullMode::PULLUP); // Zoom wheel switch with debounce of 3ms
 RotEncoder scrollWheel(EncoderResolution::DOUBLE); // Scroll wheel encoder with double resolution
 RotEncoder zoomWheel(EncoderResolution::SINGLE); // Zoom wheel encoder with single resolution
 
 void setup() {
     Serial.begin(115200);
 
-    // Uses internal pullups for testing without external resistors
-    pinMode(LEFT_BUTTON, INPUT_PULLUP);
-    pinMode(RIGHT_BUTTON, INPUT_PULLUP);
-    pinMode(SCROLLWHEEL_A, INPUT_PULLUP);
-    pinMode(SCROLLWHEEL_B, INPUT_PULLUP);
-    pinMode(ZOOMWHEEL_A, INPUT_PULLUP);
-    pinMode(ZOOMWHEEL_B, INPUT_PULLUP);
+    // Assumes everything has external pull-ups
+    pinMode(LEFT_BUTTON, INPUT);
+    pinMode(RIGHT_BUTTON, INPUT);
+    pinMode(SCROLLWHEEL_A, INPUT);
+    pinMode(SCROLLWHEEL_B, INPUT);
+    pinMode(ZOOMWHEEL_A, INPUT);
+    pinMode(ZOOMWHEEL_B, INPUT);
+    pinMode(ZOOMWHEEL_SW, INPUT);
     
     // Attach pins to buttons and encoders
     leftButton.attach(LEFT_BUTTON);
     rightButton.attach(RIGHT_BUTTON);
     scrollWheel.attach(SCROLLWHEEL_A, SCROLLWHEEL_B);
     zoomWheel.attach(ZOOMWHEEL_A, ZOOMWHEEL_B);
-
+    zoomWheelSwitch.attach(ZOOMWHEEL_SW);
     zoomWheel.setBounds(-2, 2); // Set zoom wheel bounds for testing
 }
 
@@ -40,6 +42,7 @@ void loop() {
     // Update button states
     leftButton.update();
     rightButton.update();
+    zoomWheelSwitch.update();
     
     // Update rotary encoder states
     scrollWheel.update();
@@ -53,6 +56,10 @@ void loop() {
     if (rightButton.change()) {
         Serial.print("Right Button: ");
         Serial.println(rightButton.state() ? "Pressed" : "Released");
+    }
+    if (zoomWheelSwitch.change()) {
+        Serial.print("Zoom Wheel Switch: ");
+        Serial.println(zoomWheelSwitch.state() ? "Pressed" : "Released");
     }
     if (scrollWheel.change() != 0) {
         Serial.print("Scroll Wheel: ");

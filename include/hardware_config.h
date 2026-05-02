@@ -10,15 +10,6 @@ Hardware configuration for Raspberry Pi Pico prototype board for Touchpoint Mous
 #include <ArduinoEigen.h>
 
 //////////////////////////////////////////////////////////////////
-// RTOS configuration
-//////////////////////////////////////////////////////////////////
-
-// RTOS core affinity
-uint8_t CORE_0 = 0;
-uint8_t CORE_1 = 1;
-
-
-//////////////////////////////////////////////////////////////////
 // Communications configuration
 //////////////////////////////////////////////////////////////////
 
@@ -63,12 +54,13 @@ enum Headers {
 
 #define ZOOMWHEEL_A 26
 #define ZOOMWHEEL_B 27
+#define ZOOMWHEEL_SW 15
 
 #define SCROLLWHEEL_A 17
 #define SCROLLWHEEL_B 18
 
 #define LEFT_BUTTON 13
-#define RIGHT_BUTTON 28
+#define RIGHT_BUTTON 16
 
 #define NEOPIXEL_DIN 8
 
@@ -91,8 +83,7 @@ constexpr uint16_t MOUSE_CPI = 1100;
 constexpr bool MOUSE_HEADLESS_MODE_ENABLED = true;
 const Eigen::Vector2f MOUSE_POINTER_OFFSET_MM(-29.676f, -45.375f);
 constexpr float MOUSE_POINTER_SENSITIVITY = 2.0f;
-constexpr uint8_t MOUSE_ZOOM_RESOLUTION = 3;
-constexpr float MOUSE_ZOOM_RANGE = 0.75f;
+constexpr uint8_t MOUSE_ZOOM_RANGE = 3;
 constexpr int MOUSE_OPTICAL_ROTATION_DEG = 270;
 constexpr bool MOUSE_SCROLL_DIR = true;
 constexpr bool MOUSE_ZOOM_DIR = true;

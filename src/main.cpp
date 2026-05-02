@@ -6,13 +6,13 @@
 #define INTEGRATION_TESTING
 
 #ifdef INTEGRATION_TESTING
-//#include <Button.h>
-//#include <RotEncoder.h>
+#include <Button.h>
+#include <RotEncoder.h>
 //#include <DigitalServo.h>
 //#include <Adafruit_BNO08x.h>
 //#include <SongbirdCore.h>
 //#include <SongbirdUART.h>
-#include "../integration/blink.hpp" // Testing file to run
+#include "../integration/user_inputs_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 #ifndef INTEGRATION_TESTING
@@ -456,8 +456,7 @@ void setup() {
 	mouseDriver.setHeadlessModeEnabled(MOUSE_HEADLESS_MODE_ENABLED);
 	mouseDriver.setPointerOffset(MOUSE_POINTER_OFFSET_MM);
 	mouseDriver.setPointerSensitivity(MOUSE_POINTER_SENSITIVITY);
-	mouseDriver.setZoomResolution(MOUSE_ZOOM_RESOLUTION);
-	mouseDriver.setZoomRange(MOUSE_ZOOM_RANGE);
+	mouseDriver.setzoomRange(MOUSE_ZOOM_RANGE);
 	imu.setZAxisOrientation(IMU::ZAxisOrientation::Down);
 	mouseDriver.setOpticalRotation(opticalRotationFromConfig());
 	mouseDriver.setScrollDir(MOUSE_SCROLL_DIR);
