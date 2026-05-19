@@ -23,13 +23,13 @@ void setup() {
     digitalWrite(focDriverResetPin, HIGH); // Release reset
 
     // Initialize HydraFOC motor
-    motor.begin(Direction::CW, 2.31f, true);
+    motor.begin(Direction::CW, 1.66f, true);
     motor.resetEncoder();
 
     delay(1000); // Wait for motor to stabilize
     Serial.println("FOC Motor Test Initialized.");
 
-    // Set initial target position
+    // Set target position
     motor.setPosition(0.f);
 }
 
