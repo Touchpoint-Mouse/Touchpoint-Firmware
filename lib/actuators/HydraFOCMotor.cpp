@@ -13,12 +13,12 @@ HydraFOCMotor::HydraFOCMotor(uint8_t pwmA, uint8_t pwmB, uint8_t pwmC, uint8_t e
 {
 }
 
-void HydraFOCMotor::begin(Direction encDir, float encOffset, bool skipAlign) {
+void HydraFOCMotor::begin(Direction encDir, float encOffset, bool skipAlign, TwoWire* wire) {
     //SimpleFOCDebug::enable(&Serial);
     digitalWrite(encoderDirPin, HIGH); // Set direction pin high (adjust as needed)
 
     // initialise magnetic sensor hardware
-    encoder.init();
+    encoder.init(wire);
     // link the motor to the sensor
     motor.linkSensor(&encoder);
 

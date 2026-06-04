@@ -5,12 +5,15 @@
 #include <SimpleFOC.h>
 #include "HydraFOCConfig.h"
 
+// Motor port (0 or 1)
+#define MOTOR_PORT 1
+
 // Loop counter
 unsigned long loopCounter = 0;
 
 // Motor driver
-BLDCDriver3PWM driver(focMotorPins[0][0], focMotorPins[0][1], focMotorPins[0][2], 
-                      focMotorPins[0][3], focMotorPins[0][4], focMotorPins[0][5]);
+BLDCDriver3PWM driver(focMotorPins[MOTOR_PORT][0], focMotorPins[MOTOR_PORT][1], focMotorPins[MOTOR_PORT][2], 
+                      focMotorPins[MOTOR_PORT][3], focMotorPins[MOTOR_PORT][4], focMotorPins[MOTOR_PORT][5]);
 
 // Motor object
 BLDCMotor motor(11);
@@ -19,15 +22,24 @@ BLDCMotor motor(11);
 MagneticSensorI2C encoder(AS5600_I2C);
 
 // Current sense
-LowsideCurrentSense currentSense(0.025f, 100.f, focCurrentPins[0][0], focCurrentPins[0][1]);
+LowsideCurrentSense currentSense(0.025f, 100.f, focCurrentPins[MOTOR_PORT][0], focCurrentPins[MOTOR_PORT][1]);
 
 // Control mode tracking
 float targetTorque = 0;
 
 void setup() {
     Serial.begin(SERIAL_BAUD_RATE);
-    // Configure I2C
-    Wire.begin(I2C0_SDA, I2C0_SCL);
+
+    if (MOTOR_PORT == 0) {
+        // Configure I2C
+        Wire.begin(I2C0_SDA, I2C0_SCL);
+    } else if (MOTOR_PORT == 1) {
+        // Configure I2C
+        Wire.begin(I2C1_SDA, I2C1_SCL);
+    } else {
+        Serial.println("Invalid MOTOR_PORT defined. Please set to 0 or 1.");
+        while (true); // Halt execution
+    }
 
     // Configure driver pins
     pinMode(focDriverSleepPin, OUTPUT);

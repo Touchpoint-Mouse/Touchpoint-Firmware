@@ -10,7 +10,7 @@
 #include <Button.h>
 #include <SongbirdCore.h>
 #include <SongbirdUART.h>
-#include "../integration/foc_motor_test.hpp" // Testing file to run
+#include "../integration/dual_foc_motor_test.hpp" // Testing file to run
 #endif
 //////////////////////////////////////////////////////////////
 

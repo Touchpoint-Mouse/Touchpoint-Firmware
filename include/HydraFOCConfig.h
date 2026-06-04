@@ -3,6 +3,7 @@
 
 //External imports
 #include <Arduino.h>
+#include <SimpleFOC.h>
 
 //////////////////////////////////////////////////////////////////
 // RTOS configuration
@@ -69,3 +70,14 @@ const uint8_t focCurrentPins[NUM_FOC_MOTORS][2] =
 #define IMU_FILTER_BAND MPU6050_BAND_260_HZ
 
 #endif // HYDRA_FOC_CONFIG_H
+
+////////////////////////////////////////////////////////////////
+// Encoder configuration
+////////////////////////////////////////////////////////////////
+
+Direction * motorDirs = new Direction[NUM_FOC_MOTORS] {
+    Direction::CCW, // Motor 0
+    Direction::CCW  // Motor 1
+};
+
+float encoderElectricAngles[NUM_FOC_MOTORS] = {1.67f, 2.54f}; // Motor 0, Motor 1
